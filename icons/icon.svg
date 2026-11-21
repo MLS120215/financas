@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a7357"/>
+      <stop offset="1" stop-color="#123a2b"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cfeee0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="translate(-9 21)">
+  <!-- chão -->
+  <rect x="120" y="372" width="272" height="14" rx="7" fill="#8fd4b2" opacity=".55"/>
+  <!-- barras crescentes -->
+  <rect x="136" y="292" width="58" height="72" rx="14" fill="url(#bar)" opacity=".75"/>
+  <rect x="227" y="242" width="58" height="122" rx="14" fill="url(#bar)" opacity=".88"/>
+  <rect x="318" y="190" width="58" height="174" rx="14" fill="url(#bar)"/>
+  <!-- broto saindo da barra maior -->
+  <path d="M347 190 C347 160 347 146 347 128" stroke="#8fd4b2" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <path d="M347 150 C318 152 298 136 292 106 C322 102 344 118 347 150 Z" fill="#8fd4b2"/>
+  <path d="M347 132 C352 100 376 82 410 84 C408 116 384 134 347 132 Z" fill="#e2c46f"/>
+  </g>
+</svg>
