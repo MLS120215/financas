@@ -1,8 +1,8 @@
 'use strict';
 /* ============================================================
-   Finanças — app pessoal (PWA)
-   Dados: guardados no aparelho (localStorage) e, se configurado,
-   sincronizados com o seu próprio projeto Supabase.
+   Meu Bolso — app pessoal de finanças (PWA)
+   Dados: guardados no aparelho (localStorage) e sincronizados com o
+   Supabase do app. Cada pessoa entra com a própria conta (e-mail e senha).
    ============================================================ */
 
 const MES=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -31,7 +31,11 @@ function lsGet(k,def){try{const v=localStorage.getItem(LS+k);return v==null?def:
 function lsSet(k,v){try{localStorage.setItem(LS+k,JSON.stringify(v));return true;}catch(e){showBanner('O aparelho não deixou salvar os dados. Verifique se o navegador não está no modo anônimo.',true);return false;}}
 // docs: { key: {data, t (ms da última alteração), dirty} }
 let DOCS=lsGet('docs',{});
-let AUTH=lsGet('auth',null);       // {url, key, email, access_token, refresh_token, expires_at, user_id}
+let AUTH=lsGet('auth',null);       // {email, access_token, refresh_token, expires_at, user_id}
+/* Servidor do app. O endereço e a chave PÚBLICA podem ficar no código (são feitos para isso):
+   quem protege os dados é o login de cada pessoa + as regras (RLS) da tabela no Supabase. */
+const SB_URL='https://qzzobwvyhjncjcpkeini.supabase.co';
+const SB_KEY='sb_publishable_KNBSBERGxml7mU3qij7MWg_JaM7DaN2';
 let LAST_SYNC=lsGet('lastSync',0);
 function saveDocs(){lsSet('docs',DOCS);}
 
@@ -79,7 +83,7 @@ function setSetting(patch){DOCS.settings={data:Object.assign(settings(),patch),t
 /* ---------- estado de tela ---------- */
 hydrate();
 let ano=(()=>{const a=anosComDados();return a.includes(HOJE_ANO)||!a.length?HOJE_ANO:(a.filter(y=>y<=HOJE_ANO).pop()||a[0]);})();
-let S=yr(ano), cur=ano===HOJE_ANO?today.getMonth():0, tab=hasData()?'mes':'ajustes', filtro='todos', charts={};
+let S=yr(ano), cur=ano===HOJE_ANO?today.getMonth():0, tab='mes', charts={};
 function setAno(y){ano=y;S=yr(y);cur=y===HOJE_ANO?today.getMonth():0;render();}
 
 /* ---------- formatação ---------- */
@@ -111,7 +115,7 @@ function applyLook(){
   if(s.tema==='claro') root.setAttribute('data-theme','light'); else if(s.tema==='escuro') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
   const dark=s.tema==='escuro'||(s.tema==='sistema'&&matchMedia('(prefers-color-scheme: dark)').matches);
   const c=CORES[s.cor]||CORES.floresta, [a,soft]=dark?c.d:c.l;
-  root.style.setProperty('--accent',a); root.style.setProperty('--accent-soft',soft); root.style.setProperty('--c1',a);
+  root.style.setProperty('--accent',a); root.style.setProperty('--accent-soft',soft); root.style.setProperty('--c1',a); root.style.setProperty('--brand',c.l[0]);
   const tc=document.querySelector('meta[name="theme-color"]'); if(tc) tc.content=dark?'#111714':c.l[0];
   document.getElementById('eye').innerHTML=s.ocultar
     ?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.9 8.4 2 12 2 12s4 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/></svg>'
@@ -130,10 +134,10 @@ function hideBanner(){document.getElementById('banner').className='banner hidden
    ============================================================ */
 let syncT=null, syncing=false, syncAgain=false;
 const online=()=>navigator.onLine!==false;
-function syncOn(){return !PREVIEW&&!!(AUTH&&AUTH.url&&AUTH.key&&AUTH.refresh_token);}
+function syncOn(){return !PREVIEW&&!!(AUTH&&AUTH.refresh_token);}
 function scheduleSync(){ if(!syncOn()){setStatus('','Neste aparelho');return;} setStatus('busy','Alterações a enviar'); clearTimeout(syncT); syncT=setTimeout(sync,1500); }
 async function api(path,opt={}){
-  const r=await fetch(AUTH.url.replace(/\/$/,'')+path,{...opt,headers:{apikey:AUTH.key,'Content-Type':'application/json',...(opt.headers||{})}});
+  const r=await fetch(SB_URL+path,{...opt,headers:{apikey:SB_KEY,'Content-Type':'application/json',...(opt.headers||{})}});
   const txt=await r.text(); let j=null; try{j=txt?JSON.parse(txt):null;}catch(e){}
   if(!r.ok){const msg=(j&&(j.msg||j.message||j.error_description||j.error))||('Erro '+r.status);const e=new Error(msg);e.status=r.status;throw e;}
   return j;
@@ -152,7 +156,7 @@ async function sync(){
   try{
     let tk;
     try{ tk=await token(); }
-    catch(e){ if(e.status===400||e.status===401){ AUTH=Object.assign({},AUTH,{access_token:null,refresh_token:null}); lsSet('auth',AUTH); showBanner('Sua sessão expirou. Entre de novo em Ajustes → Sincronização para voltar a sincronizar.',true); } throw e; }
+    catch(e){ if(e.status===400||e.status===401){ AUTH=Object.assign({},AUTH,{access_token:null,refresh_token:null}); lsSet('auth',AUTH); LOGIN_MODE='entrar'; showLogin('Sua sessão expirou. Entre de novo com seu e-mail e senha.','err'); } throw e; }
     const H={Authorization:'Bearer '+tk};
     // 1) baixar tudo da nuvem (são poucos documentos por ano)
     const rows=await api('/rest/v1/fin_docs?select=key,data,updated_at',{headers:H});
@@ -184,38 +188,139 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 window.addEventListener('online',()=>sync());
 setInterval(()=>{if(document.visibilityState==='visible')sync();},60000);
 
-async function entrar(criar){
-  const url=document.getElementById('sbUrl').value.trim(), key=document.getElementById('sbKey').value.trim();
-  const email=document.getElementById('sbEmail').value.trim(), senha=document.getElementById('sbPass').value;
-  const msg=document.getElementById('sbMsg');
-  if(!/^https:\/\/.+/.test(url)||!key){msg.textContent='Preencha o endereço do projeto (começa com https://) e a chave pública.';return;}
-  if(!email||senha.length<6){msg.textContent='Preencha o e-mail e uma senha com pelo menos 6 caracteres.';return;}
-  AUTH={url,key,email}; msg.textContent=criar?'Criando a conta…':'Entrando…';
-  try{
-    if(criar){
-      const j=await api('/auth/v1/signup',{method:'POST',body:JSON.stringify({email,password:senha})});
-      if(!j.access_token){lsSet('auth',AUTH);msg.textContent='Conta criada. Abra o e-mail de confirmação que o Supabase enviou e depois toque em "Entrar".';return;}
-      setSession(j);
-    }else{
-      const j=await api('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email,password:senha})});
-      setSession(j);
-    }
-    // na primeira conexão, tudo que já está no aparelho sobe para a nuvem
-    Object.keys(DOCS).forEach(k=>{DOCS[k].dirty=true;}); saveDocs();
-    msg.textContent='Conectado. Sincronizando…'; await sync(); render();
-  }catch(e){
-    lsSet('auth',AUTH);
-    msg.textContent=/invalid login/i.test(e.message)?'E-mail ou senha incorretos.':/not confirmed/i.test(e.message)?'Confirme o e-mail pelo link que o Supabase enviou e tente de novo.':'Não deu certo: '+e.message;
-  }
+/* ============================================================
+   Tela de acesso: entrar, cadastrar-se, esqueci minha senha, nova senha
+   ============================================================ */
+let LOGIN_MODE='entrar', RECOVERY=null, LOGIN_BUSY=false;
+function logado(){return PREVIEW?!!lsGet('previewLogin',false):syncOn();}
+function showApp(on){document.querySelector('.wrap').classList.toggle('hidden',!on);document.getElementById('login').classList.toggle('hidden',on);}
+function showLogin(msg,kind){showApp(false);renderLogin(msg,kind);}
+function renderLogin(msg,kind){
+  const m=LOGIN_MODE, el=document.getElementById('login');
+  const emailVal=(document.getElementById('lgEmail')||{}).value||(AUTH&&AUTH.email)||lsGet('lastEmail','')||'';
+  const T={entrar:['Entrar','Entrar'],cadastro:['Criar sua conta','Cadastrar'],esqueci:['Recuperar senha','Enviar link'],nova:['Criar nova senha','Salvar nova senha']}[m];
+  const email=m==='nova'?'':`<label for="lgEmail">E-mail<input class="field" id="lgEmail" type="email" inputmode="email" autocomplete="${m==='cadastro'?'email':'username'}" autocapitalize="off" spellcheck="false" value="${esc(emailVal)}" required></label>`;
+  const senha=m==='esqueci'?'':`<label for="lgPass">${m==='nova'?'Nova senha':'Senha'}<div class="pw"><input class="field" id="lgPass" type="password" autocomplete="${m==='entrar'?'current-password':'new-password'}" ${m==='entrar'?'':'minlength="6"'} required><button type="button" class="pwt" data-lg="ver" aria-label="Mostrar senha">Mostrar</button></div></label>`;
+  const senha2=m==='cadastro'||m==='nova'?`<label for="lgPass2">Confirme a senha<input class="field" id="lgPass2" type="password" autocomplete="new-password" required></label><div class="note" style="margin-top:-6px">Use pelo menos 6 caracteres.</div>`:'';
+  const intro=m==='esqueci'?'<div class="note">Digite o e-mail da sua conta. Vamos enviar um link para você criar uma senha nova.</div>':m==='nova'?'<div class="note">Escolha uma senha nova para a sua conta.</div>':'';
+  el.innerHTML=`<div class="lg-card">
+    <div class="lg-brand"><img src="icons/icon-192.png" alt="" width="84" height="84"><div class="lg-name">Meu Bolso</div><div class="lg-tag">Renda, gastos, metas e patrimônio, mês a mês</div></div>
+    <form class="lg-form" id="lgForm" novalidate>
+      <h2>${T[0]}</h2>${intro}${email}${senha}${senha2}
+      ${m==='entrar'?'<button type="button" class="lg-link lg-forgot" data-lg="esqueci">Esqueci minha senha</button>':''}
+      <div class="lg-msg ${kind||''}" id="lgMsg" role="status">${esc(msg||'')}</div>
+      <button class="btn lg-btn" type="submit" ${LOGIN_BUSY?'disabled':''}>${T[1]}</button>
+      <div class="lg-alt">${m==='entrar'?'Ainda não tem conta? <button type="button" class="lg-link" data-lg="cadastro">Cadastrar-se</button>'
+        :m==='nova'?'':'Já tem conta? <button type="button" class="lg-link" data-lg="entrar">Entrar</button>'}</div>
+    </form>
+  </div>`;
 }
-function sair(){AUTH=AUTH?{url:AUTH.url,key:AUTH.key,email:AUTH.email}:null;lsSet('auth',AUTH);setStatus('','Neste aparelho');render();}
+function lgMsg(t,kind){const e=document.getElementById('lgMsg');if(e){e.textContent=t;e.className='lg-msg '+(kind||'');}}
+function lgBusy(on,txt){LOGIN_BUSY=on;const b=document.querySelector('#lgForm .lg-btn');if(b){b.disabled=on;if(txt)b.textContent=txt;}}
+function traduzErro(e){
+  const m=(e&&e.message)||'';
+  if(!online()) return 'Sem internet. Conecte-se para entrar.';
+  if(e instanceof TypeError||/failed to fetch|load failed|networkerror/i.test(m)) return 'Não foi possível falar com o servidor. Verifique sua internet e tente de novo.';
+  if(/invalid login|invalid_credentials/i.test(m)) return 'E-mail ou senha incorretos.';
+  if(/not confirmed/i.test(m)) return 'Seu e-mail ainda não foi confirmado. Abra o link que enviamos e tente de novo.';
+  if(/already registered|already exists/i.test(m)) return 'Já existe uma conta com esse e-mail. Toque em "Entrar".';
+  if(/not authorized/i.test(m)) return 'O servidor do app ainda não está liberado para enviar e-mails para esse endereço.';
+  if(/rate limit|too many|security purposes/i.test(m)||e.status===429) return 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.';
+  if(/different from the old|same password/i.test(m)) return 'A senha nova precisa ser diferente da anterior.';
+  if(/password/i.test(m)&&/(6|short|weak|characters)/i.test(m)) return 'A senha precisa ter pelo menos 6 caracteres.';
+  if(/valid email|invalid.*email|email.*invalid/i.test(m)) return 'Esse e-mail não parece válido. Confira e tente de novo.';
+  if(e.status===401||/expired|invalid.*token|jwt/i.test(m)) return 'O link expirou ou já foi usado. Peça um novo em "Esqueci minha senha".';
+  return 'Não deu certo: '+m;
+}
+const emailOk=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+async function lgSubmit(){
+  if(LOGIN_BUSY) return;
+  const m=LOGIN_MODE, g=id=>(document.getElementById(id)||{}).value||'';
+  const email=g('lgEmail').trim().toLowerCase(), p1=g('lgPass'), p2=g('lgPass2');
+  if(m!=='nova'&&!emailOk(email)) return lgMsg('Digite um e-mail válido.','err');
+  if(m==='entrar'&&!p1) return lgMsg('Digite a sua senha.','err');
+  if((m==='cadastro'||m==='nova')&&p1.length<6) return lgMsg('A senha precisa ter pelo menos 6 caracteres.','err');
+  if((m==='cadastro'||m==='nova')&&p1!==p2) return lgMsg('As duas senhas não são iguais.','err');
+  if(email) lsSet('lastEmail',email);
+  if(PREVIEW){ // prévia: nada vai para a internet
+    if(m==='esqueci'){lgMsg('Prévia: no app de verdade, chega um e-mail com o link para criar a senha nova.','ok');return;}
+    lsSet('previewLogin',true); lsSet('previewEmail',email||'voce@exemplo.com'); entrarNoApp(); return;
+  }
+  try{
+    if(m==='entrar'){lgBusy(true,'Entrando…');
+      const j=await api('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email,password:p1})});
+      await depoisDoLogin(j);
+    }else if(m==='cadastro'){lgBusy(true,'Criando a conta…');
+      const j=await api('/auth/v1/signup',{method:'POST',body:JSON.stringify({email,password:p1})});
+      if(j&&j.access_token){await depoisDoLogin(j);showBanner('Conta criada. Bem-vindo ao Meu Bolso!');}
+      else{lgBusy(false);LOGIN_MODE='entrar';renderLogin(`Conta criada! Enviamos um link de confirmação para ${email}. Abra o e-mail, toque no link e depois entre aqui.`,'ok');}
+    }else if(m==='esqueci'){lgBusy(true,'Enviando…');
+      await api('/auth/v1/recover',{method:'POST',body:JSON.stringify({email})});
+      lgBusy(false,'Enviar link');lgMsg(`Pronto! Se existir uma conta com ${email}, você vai receber um link para criar uma senha nova. Confira também a caixa de spam.`,'ok');
+    }else if(m==='nova'){lgBusy(true,'Salvando…');
+      await api('/auth/v1/user',{method:'PUT',headers:{Authorization:'Bearer '+RECOVERY.access_token},body:JSON.stringify({password:p1})});
+      const j=RECOVERY; RECOVERY=null; await depoisDoLogin(j);
+      showBanner('Senha nova salva. Se você usa o app instalado na tela de início, abra-o e entre com a senha nova.');
+    }
+  }catch(e){lgBusy(false);renderLogin(traduzErro(e),'err');}
+}
+/* Depois de entrar: guarda a sessão e cuida para não misturar dados de contas diferentes no mesmo aparelho */
+async function depoisDoLogin(j){
+  if(!j.user){ j.user=await api('/auth/v1/user',{headers:{Authorization:'Bearer '+j.access_token}}); }
+  AUTH=null; setSession(j); LOGIN_BUSY=false;
+  const dono=lsGet('owner',null);
+  if(dono&&dono!==AUTH.user_id){ DOCS={}; saveDocs(); LAST_SYNC=0; lsSet('lastSync',0); }      // outra conta: começa limpo e baixa os dados dela
+  else if(!dono&&hasData()){ Object.keys(DOCS).forEach(k=>{DOCS[k].dirty=true;}); saveDocs(); } // dados de antes do login sobem para a conta
+  lsSet('owner',AUTH.user_id);
+  entrarNoApp(); await sync();
+}
+function entrarNoApp(){
+  hydrate(); ano=HOJE_ANO; S=yr(ano); cur=today.getMonth(); tab='mes';
+  applyLook(); showApp(true); render(); window.scrollTo(0,0);
+  if(PREVIEW){setStatus('busy','Prévia: nada vai para a nuvem');showBanner('Prévia para validação. Os dados são de exemplo e ficam só neste navegador.');}
+}
+async function sair(forcar){
+  const txt=document.getElementById('confSairTxt');
+  if(!PREVIEW&&!forcar&&Object.values(DOCS).some(d=>d.dirty)){
+    if(txt) txt.textContent='Enviando suas últimas alterações…';
+    try{await sync();}catch(e){}
+    if(Object.values(DOCS).some(d=>d.dirty)){
+      const box=document.getElementById('confSair');
+      if(box) box.innerHTML='<div>Algumas alterações ainda não foram para a nuvem (sem internet?). Se sair agora, elas se perdem.</div><div class="chips" style="margin-top:8px"><button class="btn" data-act="sairSim">Tentar de novo</button><button class="btn danger" data-act="sairForce">Sair mesmo assim</button><button class="btn ghost" data-act="sairNao">Cancelar</button></div>';
+      return;
+    }
+  }
+  if(PREVIEW){lsSet('previewLogin',false);LOGIN_MODE='entrar';showLogin('Você saiu da sua conta.','ok');return;}
+  const tk=AUTH&&AUTH.access_token;
+  if(tk) fetch(SB_URL+'/auth/v1/logout',{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+tk}}).catch(()=>{});
+  DOCS={}; saveDocs(); AUTH=null; lsSet('auth',null); lsSet('owner',null); LAST_SYNC=0; lsSet('lastSync',0);
+  hydrate(); S=yr(ano); setStatus('','');
+  LOGIN_MODE='entrar'; showLogin('Você saiu da sua conta.','ok');
+}
+/* Links que chegam por e-mail (confirmação de conta e senha nova) voltam para o app com os dados depois do # */
+function lerLinkDoEmail(){
+  const h=location.hash.slice(1); if(!h||!/access_token=|error=/.test(h)) return null;
+  const p=new URLSearchParams(h); history.replaceState(null,'',location.pathname+location.search);
+  if(p.get('error')||p.get('error_description')){
+    const exp=p.get('error_code')==='otp_expired'||/expired/i.test(p.get('error_description')||'');
+    return {erro:exp?'Esse link expirou ou já foi usado. Peça um novo.':'Não foi possível validar o link do e-mail. Tente de novo.'};
+  }
+  return {tipo:p.get('type'),j:{access_token:p.get('access_token'),refresh_token:p.get('refresh_token'),expires_in:+p.get('expires_in')||3600}};
+}
+document.getElementById('login').addEventListener('submit',e=>{e.preventDefault();lgSubmit();});
+document.getElementById('login').addEventListener('click',e=>{
+  const b=e.target.closest('[data-lg]'); if(!b) return;
+  const a=b.dataset.lg;
+  if(a==='ver'){const i=document.getElementById('lgPass'),i2=document.getElementById('lgPass2'),ver=i.type==='password';[i,i2].forEach(x=>{if(x)x.type=ver?'text':'password';});b.textContent=ver?'Ocultar':'Mostrar';b.setAttribute('aria-label',ver?'Ocultar senha':'Mostrar senha');return;}
+  LOGIN_MODE=a; renderLogin(''); const f=document.querySelector('#lgForm .field'); f&&f.focus();
+});
 
 /* ---------- backup ---------- */
 function exportar(){
   const payload={app:'financas',versao:1,exportado:new Date().toISOString(),docs:Object.fromEntries(Object.entries(DOCS).map(([k,v])=>[k,v.data]))};
   const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='financas-backup-'+new Date().toISOString().slice(0,10)+'.json'; document.body.appendChild(a); a.click();
+  a.download='meu-bolso-backup-'+new Date().toISOString().slice(0,10)+'.json'; document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
 }
 function importar(file){
@@ -229,7 +334,7 @@ function importar(file){
       const a=anosComDados(); ano=a.includes(HOJE_ANO)?HOJE_ANO:(a[a.length-1]||HOJE_ANO); S=yr(ano); cur=ano===HOJE_ANO?today.getMonth():0;
       applyLook(); tab='mes'; render(); scheduleSync();
       showBanner(`Backup importado: ${n} documentos (${a.join(', ')}).`);
-    }catch(e){ showBanner('Esse arquivo não é um backup do app Finanças.',true); }
+    }catch(e){ showBanner('Esse arquivo não é um backup do app Meu Bolso.',true); }
   };
   rd.readAsText(file);
 }
@@ -241,7 +346,7 @@ let pendingRender=false;
 function anos(){const ys=new Set(anosComDados());ys.add(HOJE_ANO);ys.add(ano);return [...ys].sort();}
 function renderHeader(){
   const s=settings();
-  document.getElementById('h1').textContent='Finanças '+ano;
+  document.getElementById('h1').textContent='Meu Bolso';
   document.getElementById('hello').textContent=s.nome?`Olá, ${s.nome}. Renda, gastos, metas e patrimônio, mês a mês`:'Renda, gastos, metas e patrimônio, mês a mês';
   const ys=anos(), prox=ys[ys.length-1]+1;
   document.getElementById('years').innerHTML=ys.map(y=>`<button data-y="${y}" class="${y===ano?'on':''}">${y}</button>`).join('')+`<button data-novo="${prox}" class="novo" title="Começar o ano de ${prox}">+ ${prox}</button>`;
@@ -265,17 +370,59 @@ document.addEventListener('focusout',()=>setTimeout(()=>{if(pendingRender)render
 
 function catOpts(tipo,sel){const l=cats(tipo);return l.concat(sel&&!l.includes(sel)?[sel]:[]).map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');}
 function tipoOpts(sel){return TIPOS.map(t=>`<option ${t===sel?'selected':''}>${t}</option>`).join('');}
+/* ---------- filtros e datas dos lançamentos ---------- */
+let F={tipo:'',cat:'',valor:'',sit:''};            // aba Mês
+let FC={cartao:'',cat:'',valor:'',sit:''};         // compras no cartão
+const FAIXAS=[['','Valor'],['0-100','Até R$ 100'],['100-500','R$ 100 a R$ 500'],['500-1000','R$ 500 a R$ 1.000'],['1000-','Acima de R$ 1.000']];
+function naFaixa(v,f){if(!f)return true;const [a,b]=f.split('-');v=Math.abs(Number(v)||0);return v>=(+a||0)&&(b===''||v<=+b);}
+function tipoOk(f,tipo){return !f||(f==='entradas'?(ENTRADA.has(tipo)||tipo==='Vale (benefício)'):tipo===f);}
+function sitOk(f,pago){return !f||(f==='pago'?pago:!pago);}
+function compraSitOk(f,x){return !f||(f==='avista'?x.total<=1:f==='parcelada'?x.total>1:f==='terceiro'?!!x.terceiro:true);}
+function filtrosAtivos(o){return Object.values(o).some(Boolean);}
+function diasNoMes(y,m){return new Date(y,m+1,0).getDate();}
+function isoDe(y,m,d){return `${y}-${pad(m)}-${String(d).padStart(2,'0')}`;}
+function diaDe(x){return x&&typeof x.data==='string'&&/^\d{4}-\d\d-\d\d$/.test(x.data)?+x.data.slice(8,10):0;}
+function diaPadrao(){const h=new Date();return (ano===h.getFullYear()&&cur===h.getMonth())?h.getDate():1;}
+function diaOpts(sel,vazio){const n=diasNoMes(ano,cur);let o=vazio?`<option value="" ${!sel?'selected':''}>Sem data</option>`:'';for(let d=1;d<=n;d++)o+=`<option value="${d}" ${+sel===d?'selected':''}>${String(d).padStart(2,'0')}/${pad(cur)}</option>`;return o;}
+function fmtData(iso){return /^\d{4}-\d\d-\d\d$/.test(iso||'')?`${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}`:'';}
+function selFiltro(attr,key,val,opts,label){
+  return `<select class="${val?'on':''}" data-${attr}="${key}" aria-label="${label}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===val?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
+}
+function barraFiltrosMes(todos,nVis,ativo){
+  const catsMes=[...new Set(todos.map(x=>x.cat).filter(Boolean).concat(F.cat?[F.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  return `<div class="filtros" aria-label="Filtrar lançamentos">
+    ${selFiltro('fl','tipo',F.tipo,[['','Tipo'],['entradas','Entradas (todas)'],...TIPOS.map(t=>[t,t])],'Filtrar por tipo')}
+    ${selFiltro('fl','cat',F.cat,[['','Categoria'],...catsMes.map(c=>[c,c])],'Filtrar por categoria')}
+    ${selFiltro('fl','valor',F.valor,FAIXAS,'Filtrar por valor')}
+    ${selFiltro('fl','sit',F.sit,[['','Situação'],['pago','Pago/recebido'],['pend','A pagar/receber']],'Filtrar por situação')}
+  </div>
+  ${ativo?`<div class="frow"><span class="note">Mostrando ${nVis} de ${todos.length} lançamentos</span><button type="button" class="lg-link" data-act="limparF">Limpar filtros</button></div>`:''}`;
+}
+function barraFiltrosCC(compras,ativo){
+  const catsCC=[...new Set(compras.map(x=>x.cat).filter(Boolean).concat(FC.cat?[FC.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  return `<section class="card"><div class="row"><h2>Filtrar compras</h2>${ativo?'<button type="button" class="lg-link" data-act="limparFC">Limpar filtros</button>':''}</div>
+    <div class="filtros${CARTOES.length>1?' f5':''}" aria-label="Filtrar compras no cartão">
+    ${CARTOES.length>1?selFiltro('fc','cartao',FC.cartao,[['','Cartão'],...CARTOES.map(k=>[k.id,k.nome])],'Filtrar por cartão'):''}
+    ${selFiltro('fc','cat',FC.cat,[['','Categoria'],...catsCC.map(c=>[c,c])],'Filtrar por categoria')}
+    ${selFiltro('fc','valor',FC.valor,FAIXAS,'Filtrar por valor')}
+    ${selFiltro('fc','sit',FC.sit,[['','Situação'],['avista','À vista'],['parcelada','Parceladas'],['terceiro','De outra pessoa']],'Filtrar por situação')}
+  </div></section>`;
+}
+
 function prevMonth(){return cur>0?S.months[cur-1]:(Y[ano-1]?Y[ano-1].months[11]:[]);}
 
 function viewMes(){
   if(!hasData()) return viewBoasVindas();
   const c=calc(cur);
-  const items=S.months[cur].map((x,i)=>({...x,_i:i})).filter(x=>filtro==='todos'||(filtro==='entradas'?ENTRADA.has(x.tipo)||x.tipo==='Vale (benefício)':x.tipo===(filtro==='despesas'?'Despesa':'Investimento')))
-    .sort((a,b)=>(ORD[a.tipo]-ORD[b.tipo])||(a.cat||'').localeCompare(b.cat||'')||a._i-b._i);
+  const todos=S.months[cur].map((x,i)=>({...x,_i:i}));
+  const items=todos.filter(x=>tipoOk(F.tipo,x.tipo)&&(!F.cat||x.cat===F.cat)&&naFaixa(x.valor,F.valor)&&sitOk(F.sit,!!x.pago))
+    .sort((a,b)=>(diaDe(b)-diaDe(a))||(b._i-a._i));
+  const fAtivo=filtrosAtivos(F);
   const ct={}; allItems(cur).forEach(x=>{if(x.tipo==='Despesa')ct[x.cat]=(ct[x.cat]||0)+(Number(x.valor)||0);});
   const cl=Object.entries(ct).sort((a,b)=>b[1]-a[1]); const mx=cl.length?cl[0][1]:1;
   const prevHas=prevMonth().length, prevLbl=cur>0?MESL[cur-1]:'Dezembro de '+(ano-1);
   const rows=items.map(x=>`<tr data-i="${x._i}">
+      <td style="min-width:92px"><select class="cell dia" data-f="dia" aria-label="Data">${diaOpts(diaDe(x),true)}</select></td>
       <td style="min-width:200px"><input class="cell" data-f="desc" value="${esc(x.desc)}" aria-label="Descrição">${x.obs?`<div class="note" style="padding:0 6px 3px">${esc(x.obs)}</div>`:''}</td>
       <td style="min-width:150px"><select class="cell" data-f="tipo" aria-label="Tipo">${tipoOpts(x.tipo)}</select></td>
       <td style="min-width:150px"><select class="cell" data-f="cat" aria-label="Categoria">${catOpts(x.tipo,x.cat)}</select></td>
@@ -292,19 +439,20 @@ function viewMes(){
   </div>
   <div class="grid2">
     <section class="card">
-      <div class="row"><h2>Lançamentos de ${MESL[cur]}</h2>
-        <div class="chips">${[['todos','Todos'],['entradas','Entradas'],['despesas','Despesas'],['inv','Investimentos']].map(([k,l])=>`<button class="chip ${filtro===k?'on':''}" data-filtro="${k}">${l}</button>`).join('')}</div></div>
+      <h2>Lançamentos de ${MESL[cur]}</h2>
       <form class="add" id="addForm">
         <input id="aDesc" placeholder="Descrição (ex.: Mercado)" required>
+        <label class="adia"><span>Data</span><select id="aDia" aria-label="Data do lançamento">${diaOpts(diaPadrao(),false)}</select></label>
         <select id="aTipo">${tipoOpts('Despesa')}</select>
         <select id="aCat">${catOpts('Despesa','Alimentação')}</select>
         <input id="aVal" placeholder="Valor" inputmode="decimal" required>
         <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="aPago" checked> Pago</label>
         <button class="btn" type="submit">Adicionar</button>
       </form>
-      <div class="tbl" id="lanc"><table><thead><tr><th>Descrição</th><th>Tipo</th><th>Categoria</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead>
-      <tbody>${rows||(S.cc[cur].compras.length?'':`<tr><td colspan="6" class="note" style="padding:16px 6px">Nenhum lançamento em ${MESL[cur]} ainda.${prevHas?' Use "Copiar fixos" ao lado para trazer as contas do mês anterior.':''}</td></tr>`)}</tbody></table></div>
-      ${filtro==='inv'?'':blocoFaturasMes()}
+      ${todos.length?barraFiltrosMes(todos,items.length,fAtivo):''}
+      <div class="tbl" id="lanc"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${rows||(fAtivo&&todos.length?`<tr><td colspan="7" class="note" style="padding:16px 6px">Nenhum lançamento com esses filtros.</td></tr>`:S.cc[cur].compras.length?'':`<tr><td colspan="7" class="note" style="padding:16px 6px">Nenhum lançamento em ${MESL[cur]} ainda.${prevHas?' Use "Copiar fixos" ao lado para trazer as contas do mês anterior.':''}</td></tr>`)}</tbody></table></div>
+      ${blocoFaturasMes()}
     </section>
     <aside style="display:flex;flex-direction:column;gap:16px">
       <section class="card"><h2>Para onde foi o dinheiro</h2>
@@ -321,19 +469,20 @@ function viewMes(){
 function nomeCartao(id){const c=CARTOES.find(x=>x.id===id);return c?c.nome:'Cartão removido';}
 function faturasDoMes(Yy,m){const c=Yy.cc[m];const g={};c.compras.forEach(x=>{(g[x.cartao]=g[x.cartao]||{id:x.cartao,total:0,n:0});g[x.cartao].total+=Number(x.valor)||0;g[x.cartao].n++;});return Object.values(g).map(f=>({...f,pago:!!(c.faturas[f.id]||{}).pago,banco:(c.faturas[f.id]||{}).banco}));}
 function blocoFaturasMes(){
-  const fs=faturasDoMes(S,cur), terc=S.cc[cur].compras.filter(x=>x.terceiro);
-  if(!fs.length) return '';
+  const fs0=faturasDoMes(S,cur), terc0=S.cc[cur].compras.filter(x=>x.terceiro);
+  if(!fs0.length) return '';
+  const fs=(!F.tipo||F.tipo==='Despesa')&&!F.cat?fs0.filter(f=>naFaixa(f.total,F.valor)&&sitOk(F.sit,f.pago)):[];
+  const terc=(!F.tipo||F.tipo==='entradas'||F.tipo==='Reembolso')&&!F.cat?terc0.filter(x=>naFaixa(x.valor,F.valor)&&sitOk(F.sit,!!x.recebido)):[];
   const manual=S.months[cur].some(x=>x.tipo==='Despesa'&&x.cat==='Cartão de crédito');
-  const linhasF=filtro==='entradas'?'':fs.map(f=>`<div class="ccrow"><div><b>Fatura ${esc(nomeCartao(f.id))}</b><div class="note">${f.n} ${f.n===1?'compra':'compras'} · Despesa · categorias de cada compra</div></div><div class="ccv">${brl(f.total)}</div><button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(f.id)}">${f.pago?'Pago':'A pagar'}</button><button class="chip" data-goto="cartoes">Ver compras</button></div>`).join('');
-  const linhasT=filtro==='despesas'?'':terc.map(x=>`<div class="ccrow"><div><b>Reembolso – ${esc(x.quem||'outra pessoa')}</b><div class="note">${esc(x.desc)}${x.total>1?` ${x.parcela}/${x.total}`:''} · no cartão ${esc(nomeCartao(x.cartao))}</div></div><div class="ccv">${brl(x.valor)}</div><button class="paid ${x.recebido?'yes':'no'}" data-act="tercrec" data-id="${esc(x.id)}">${x.recebido?'Recebido':'A receber'}</button><span></span></div>`).join('');
+  const linhasF=fs.map(f=>`<div class="ccrow"><div><b>Fatura ${esc(nomeCartao(f.id))}</b><div class="note">${f.n} ${f.n===1?'compra':'compras'} · Despesa · categorias de cada compra</div></div><div class="ccv">${brl(f.total)}</div><button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(f.id)}">${f.pago?'Pago':'A pagar'}</button><button class="chip" data-goto="cartoes">Ver compras</button></div>`).join('');
+  const linhasT=terc.map(x=>`<div class="ccrow"><div><b>Reembolso – ${esc(x.quem||'outra pessoa')}</b><div class="note">${esc(x.desc)}${x.total>1?` ${x.parcela}/${x.total}`:''} · no cartão ${esc(nomeCartao(x.cartao))}</div></div><div class="ccv">${brl(x.valor)}</div><button class="paid ${x.recebido?'yes':'no'}" data-act="tercrec" data-id="${esc(x.id)}">${x.recebido?'Recebido':'A receber'}</button><span></span></div>`).join('');
   if(!linhasF&&!linhasT) return '';
   return `<div class="ccbox"><div class="note" style="font-weight:600;color:var(--ink)">Dos cartões (automático)</div>${linhasF}${linhasT}
     ${manual?'<div class="banner" style="margin-top:8px">Este mês também tem uma fatura lançada à mão na categoria "Cartão de crédito". Se ela é a mesma fatura da aba Cartões, apague a linha manual para não contar duas vezes.</div>':''}</div>`;
 }
 function viewBoasVindas(){
   return `<div class="welcome">
-    <section class="card"><h2>Trazer seus dados</h2><div class="note">Importe o arquivo de backup (financas-backup-….json). Ele traz todos os lançamentos, metas e patrimônio.</div><button class="btn" data-act="importar">Importar backup</button></section>
-    <section class="card"><h2>Sincronizar aparelhos</h2><div class="note">Se você já usa o app em outro aparelho, entre com a mesma conta e os dados descem sozinhos.</div><button class="btn ghost" data-goto="ajustes">Abrir sincronização</button></section>
+    <section class="card"><h2>Trazer seus dados</h2><div class="note">Importe um arquivo de backup do app (meu-bolso-backup-….json ou financas-backup-….json). Ele traz todos os lançamentos, metas e patrimônio.</div><button class="btn" data-act="importar">Importar backup</button></section>
     <section class="card"><h2>Começar do zero</h2><div class="note">Comece ${HOJE_ANO} com a planilha vazia.</div><button class="btn ghost" data-act="zero">Começar vazio</button></section>
   </div>`;
 }
@@ -406,19 +555,24 @@ function viewCartoes(){
   let futuro=0; cadaCompra((x,y,m)=>{if(y>ano||(y===ano&&m>cur))futuro+=Number(x.valor)||0;});
   const prox=[...Array(6).keys()].map(i=>{const t=norm(ano,cur+1+i),Yy=Y[t.y];const vals=CARTOES.map(k=>Yy?Yy.cc[t.m].compras.filter(x=>x.cartao===k.id).reduce((a,x)=>a+(Number(x.valor)||0),0):0);return {t,vals,total:vals.reduce((a,b)=>a+b,0)};});
   const cardOpts=CARTOES.map(k=>`<option value="${esc(k.id)}">${esc(k.nome)}</option>`).join('');
+  const fcAtivo=filtrosAtivos(FC);
   const blocoCartao=k=>{
-    const lista=c.compras.filter(x=>x.cartao===k.id), f=fs.find(z=>z.id===k.id)||{total:0,n:0,pago:false};
+    if(FC.cartao&&FC.cartao!==k.id) return '';
+    const lista0=c.compras.map((x,i)=>({...x,_i:i})).filter(x=>x.cartao===k.id).sort((a,b)=>(b.data||'').localeCompare(a.data||'')||(b._i-a._i));
+    const lista=lista0.filter(x=>(!FC.cat||x.cat===FC.cat)&&naFaixa(x.valor,FC.valor)&&compraSitOk(FC.sit,x));
+    const f=fs.find(z=>z.id===k.id)||{total:0,n:0,pago:false};
     const fat=c.faturas[k.id]||{}, banco=fat.banco, dif=banco!=null&&banco!==''?Math.round((Number(banco)-f.total)*100)/100:null;
     const venc=`${String(k.vence).padStart(2,'0')}/${pad(cur)}`;
     const rows=lista.map(x=>`<tr data-cc="${esc(x.id)}">
-      <td style="min-width:180px"><input class="cell" data-ccf="desc" value="${esc(x.desc)}" aria-label="Descrição">${x.total>1||x.terceiro?`<div class="note" style="padding:0 6px 3px">${x.total>1?`Parcela ${x.parcela} de ${x.total}`:''}${x.total>1&&x.terceiro?' · ':''}${x.terceiro?`de ${esc(x.quem||'outra pessoa')} (vira reembolso)`:''}</div>`:''}</td>
+      <td style="min-width:180px"><input class="cell" data-ccf="desc" value="${esc(x.desc)}" aria-label="Descrição"><div class="note" style="padding:0 6px 3px">${[x.data?fmtData(x.data):'',x.total>1?`Parcela ${x.parcela} de ${x.total}`:'',x.terceiro?`de ${esc(x.quem||'outra pessoa')} (vira reembolso)`:''].filter(Boolean).join(' · ')}</div></td>
       <td style="min-width:140px"><select class="cell" data-ccf="cat" aria-label="Categoria">${catOpts('Despesa',x.cat)}</select></td>
       <td style="min-width:100px"><input class="cell num" data-ccf="valor" inputmode="decimal" value="${fmtIn(x.valor)}" aria-label="Valor" ${hide()?'readonly':''}></td>
       <td><button class="del" data-act="delcc" title="${x.total>1?'Apagar a compra e todas as parcelas':'Apagar compra'}" aria-label="Apagar">×</button></td></tr>`).join('');
     return `<section class="card"><div class="row"><div><h2>${esc(k.nome)} · fatura de ${MESL[cur]}</h2><div class="note">Vence em ${venc} · fecha todo dia ${k.fecha}</div></div>
       <div class="row" style="gap:10px"><span style="font-family:var(--display);font-size:22px">${brl(f.total)}</span>${f.n?`<button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(k.id)}">${f.pago?'Pago':'A pagar'}</button>`:''}</div></div>
       ${barraLimite(k)}
-      ${f.n?`<div class="tbl" id="lanc-cc-${esc(k.id)}"><table><thead><tr><th>Compra</th><th>Categoria</th><th class="num">Valor</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="note">Nenhuma compra nesta fatura.</div>`}
+      ${fcAtivo&&lista0.length?`<div class="note">${lista.length?`Mostrando ${lista.length} de ${lista0.length} ${lista0.length===1?'compra':'compras'} desta fatura.`:'Nenhuma compra desta fatura com esses filtros.'}</div>`:''}
+      ${lista.length?`<div class="tbl" id="lanc-cc-${esc(k.id)}"><table><thead><tr><th>Compra</th><th>Categoria</th><th class="num">Valor</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:lista0.length?'':`<div class="note">Nenhuma compra nesta fatura.</div>`}
       <div class="metaIn"><label for="banco-${esc(k.id)}">Valor que o banco cobrou</label><input id="banco-${esc(k.id)}" data-banco="${esc(k.id)}" inputmode="decimal" placeholder="opcional" value="${fmtIn(banco)}" ${hide()?'readonly':''}>
         ${dif===null?'<span class="note">Digite para conferir com o que foi lançado.</span>':dif===0?'<span class="pill ok">Confere com o banco</span>':dif>0?`<span class="pill part">Faltam ${brl(dif)} em compras</span><button class="btn ghost" data-act="difcc" data-card="${esc(k.id)}" data-dif="${dif}">Lançar diferença como Outros</button>`:`<span class="pill no">Lançado ${brl(-dif)} a mais que o banco</span>`}</div>
     </section>`;
@@ -431,6 +585,7 @@ function viewCartoes(){
   </div>
   <div class="grid2">
     <div style="display:flex;flex-direction:column;gap:16px">
+      ${CARTOES.length&&c.compras.length?barraFiltrosCC(c.compras,fcAtivo):''}
       ${CARTOES.length?CARTOES.map(blocoCartao).join(''):`<section class="card"><h2>Comece cadastrando um cartão</h2><div class="note">Use o card "Seus cartões" ao lado. Você vai precisar do dia em que a fatura fecha e do dia em que ela vence.</div></section>`}
     </div>
     <aside style="display:flex;flex-direction:column;gap:16px">
@@ -533,18 +688,11 @@ function viewAjustes(){
   </section>
   <section class="card"><h2>Categorias</h2>${catEdit('Despesa')}${catEdit('Renda')}
     <div class="note">Remover uma categoria só a tira das listas. Lançamentos antigos continuam com ela.</div></section>
-  <section class="card"><h2>Sincronização entre aparelhos</h2>
-    ${on?`<div class="row"><div><b>Conectado</b> como ${esc(A.email||'')}<div class="note">${LAST_SYNC?'Última sincronização: '+new Date(LAST_SYNC).toLocaleString('pt-BR'):'Ainda não sincronizou'}</div></div>
-      <div class="chips"><button class="btn" data-act="sync">Sincronizar agora</button><button class="btn ghost" data-act="sair">Sair</button></div></div>`
-    :`<div class="note">Use o seu projeto gratuito do Supabase. O endereço e a chave pública ficam em Project Settings → API. Use a mesma conta em todos os aparelhos.</div>
-    <div class="form">
-      <label for="sbUrl">Endereço do projeto<input class="field" id="sbUrl" value="${esc(A.url||'')}" placeholder="https://xxxx.supabase.co" autocomplete="off"></label>
-      <label for="sbKey">Chave pública (anon)<input class="field" id="sbKey" value="${esc(A.key||'')}" placeholder="eyJhbGciOi…" autocomplete="off"></label>
-      <label for="sbEmail">E-mail<input class="field" id="sbEmail" type="email" value="${esc(A.email||'')}" autocomplete="email"></label>
-      <label for="sbPass">Senha<input class="field" id="sbPass" type="password" autocomplete="current-password"></label>
-    </div>
-    <div class="chips"><button class="btn" data-act="entrar">Entrar</button><button class="btn ghost" data-act="criar">Criar conta</button></div>
-    <div class="note" id="sbMsg"></div>`}
+  <section class="card"><h2>Sua conta</h2>
+    <div class="row"><div><b>${esc((PREVIEW?lsGet('previewEmail',''):(AUTH||{}).email)||'')}</b><div class="note">${PREVIEW?'Prévia: nada vai para a nuvem':LAST_SYNC?'Sincronizado entre seus aparelhos. Última vez: '+new Date(LAST_SYNC).toLocaleString('pt-BR'):'Ainda não sincronizou'}</div></div>
+      <div class="chips"><button class="btn ghost" data-act="sync">Sincronizar agora</button><button class="btn danger" data-act="sair">Sair</button></div></div>
+    <div class="banner hidden" id="confSair"><div id="confSairTxt">Sair da conta? Seus dados continuam guardados na nuvem e voltam quando você entrar de novo. Neste aparelho, eles são apagados.</div>
+      <div class="chips" style="margin-top:8px"><button class="btn danger" data-act="sairSim">Sair</button><button class="btn ghost" data-act="sairNao">Cancelar</button></div></div>
   </section>
   <section class="card"><h2>Backup</h2>
     <div class="note">Guarde uma cópia de tudo em um arquivo. Serve também para levar os dados para outro aparelho sem sincronização.</div>
@@ -575,7 +723,6 @@ document.getElementById('fileIn').addEventListener('change',e=>{const f=e.target
 
 const V=document.getElementById('view');
 V.addEventListener('click',e=>{
-  const f=e.target.closest('[data-filtro]'); if(f){filtro=f.dataset.filtro;render();return;}
   const g=e.target.closest('[data-goto]'); if(g){tab=g.dataset.goto;render();return;}
   const cor=e.target.closest('[data-cor]'); if(cor){setSetting({cor:cor.dataset.cor});render();return;}
   const dc=e.target.closest('[data-delcat]'); if(dc){const s=settings(),tp=dc.dataset.tipo,c=dc.dataset.delcat;
@@ -591,8 +738,12 @@ V.addEventListener('click',e=>{
   if(act==='importar'){document.getElementById('fileIn').click();return;}
   if(act==='exportar'){exportar();return;}
   if(act==='zero'){yr(HOJE_ANO).keep=true;touch(cfgKey(HOJE_ANO));setAno(HOJE_ANO);return;}
-  if(act==='entrar'||act==='criar'){entrar(act==='criar');return;}
-  if(act==='sair'){sair();return;}
+  if(act==='sair'){document.getElementById('confSair').classList.remove('hidden');return;}
+  if(act==='sairNao'){document.getElementById('confSair').classList.add('hidden');return;}
+  if(act==='sairSim'){sair(false);return;}
+  if(act==='sairForce'){sair(true);return;}
+  if(act==='limparF'){F={tipo:'',cat:'',valor:'',sit:''};render();return;}
+  if(act==='limparFC'){FC={cartao:'',cat:'',valor:'',sit:''};render();return;}
   if(act==='sync'){sync().then(render);return;}
   if(act==='instalar'&&deferredPrompt){deferredPrompt.prompt();deferredPrompt.userChoice.finally(()=>{deferredPrompt=null;render();});return;}
   if(act==='apagar'){document.getElementById('confApagar').classList.remove('hidden');return;}
@@ -612,7 +763,9 @@ V.addEventListener('click',e=>{
     const ja=new Set(S.months[cur].map(x=>x.desc.toLowerCase()));
     fixos.forEach(x=>{ if(ja.has(x.desc.toLowerCase())) return;
       const desc=x.desc.replace(/(\d+)\/(\d+)/,(s,p,q)=>+p<+q?`${+p+1}/${q}`:s); if(/(\d+)\/(\d+)/.test(x.desc)&&desc===x.desc) return;
-      S.months[cur].push({id:uid(),desc,cat:x.cat,tipo:x.tipo,valor:x.valor,pago:false});});
+      const d=diaDe(x), it={id:uid(),desc,cat:x.cat,tipo:x.tipo,valor:x.valor,pago:false};
+      if(d) it.data=isoDe(ano,cur,Math.min(d,diasNoMes(ano,cur)));
+      S.months[cur].push(it);});
     touch(monthKey(ano,cur)); render(); return;
   }
   const tr=a.closest('tr[data-i]'); if(!tr) return;
@@ -623,6 +776,9 @@ V.addEventListener('click',e=>{
 V.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='aTipo'){document.getElementById('aCat').innerHTML=catOpts(t.value);return;}
+  if(t.dataset.fl){F[t.dataset.fl]=t.value;t.blur();render();return;}
+  if(t.dataset.fc){FC[t.dataset.fc]=t.value;t.blur();render();return;}
+  if(t.id==='aDia') return;
   if(t.id==='stNome'){setSetting({nome:t.value.trim()});t.blur();render();return;}
   if(t.id==='stTema'){setSetting({tema:t.value});t.blur();render();return;}
   if(t.id==='stOcultar'){setSetting({ocultar:t.checked});render();return;}
@@ -641,7 +797,8 @@ V.addEventListener('change',e=>{
     arr[+t.dataset.m]=t.value.trim()===''?null:parseBR(t.value);touch(cfgKey(ano));t.blur();render();return;}
   const tr=t.closest('tr[data-i]'); if(!tr||!t.dataset.f) return;
   const it=S.months[cur][+tr.dataset.i], fld=t.dataset.f;
-  if(fld==='valor') it.valor=parseBR(t.value);
+  if(fld==='dia'){ if(t.value) it.data=isoDe(ano,cur,+t.value); else delete it.data; }
+  else if(fld==='valor') it.valor=parseBR(t.value);
   else if(fld==='tipo'){it.tipo=t.value; if(!cats(it.tipo).includes(it.cat)) it.cat=cats(it.tipo)[0]||'Outros';}
   else it[fld]=t.value;
   touch(monthKey(ano,cur)); t.blur(); render();
@@ -652,7 +809,7 @@ V.addEventListener('submit',e=>{
   e.preventDefault(); const fm=e.target;
   if(fm.id==='addForm'){
     const d=document.getElementById('aDesc').value.trim(), v=parseBR(document.getElementById('aVal').value); if(!d||!v) return;
-    S.months[cur].push({id:uid(),desc:d,tipo:document.getElementById('aTipo').value,cat:document.getElementById('aCat').value,valor:v,pago:document.getElementById('aPago').checked});
+    S.months[cur].push({id:uid(),data:isoDe(ano,cur,+document.getElementById('aDia').value||diaPadrao()),desc:d,tipo:document.getElementById('aTipo').value,cat:document.getElementById('aCat').value,valor:v,pago:document.getElementById('aPago').checked});
     yr(ano).keep=true; touch(monthKey(ano,cur)); document.activeElement&&document.activeElement.blur(); render();
     setTimeout(()=>{const x=document.getElementById('aDesc');x&&x.focus();},0); return;
   }
@@ -686,6 +843,16 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPro
 if(!PREVIEW&&'serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 
 /* ---------- início ---------- */
-applyLook(); render();
-if(PREVIEW){setStatus('busy','Prévia: nada vai para a nuvem');showBanner('Prévia da aba Cartões para validação. Os dados ficam só neste navegador e não afetam o seu app.');}
-else if(syncOn()) sync(); else setStatus('','Neste aparelho');
+applyLook();
+(function iniciar(){
+  const link=PREVIEW?null:lerLinkDoEmail();
+  if(link&&link.erro){LOGIN_MODE='esqueci';showLogin(link.erro,'err');return;}
+  if(link&&link.tipo==='recovery'){RECOVERY=link.j;LOGIN_MODE='nova';showLogin('');return;}
+  if(link&&link.j){showLogin('Confirmando o seu e-mail…','ok');
+    depoisDoLogin(link.j).then(()=>showBanner('E-mail confirmado. Bem-vindo ao Meu Bolso!')).catch(e=>{LOGIN_MODE='entrar';showLogin(traduzErro(e),'err');});return;}
+  if(!logado()){LOGIN_MODE='entrar';showLogin('');return;}
+  if(!PREVIEW&&!lsGet('owner',null)&&AUTH&&AUTH.user_id) lsSet('owner',AUTH.user_id); // aparelhos que já estavam conectados
+  showApp(true); render();
+  if(PREVIEW){setStatus('busy','Prévia: nada vai para a nuvem');showBanner('Prévia para validação. Os dados são de exemplo e ficam só neste navegador.');}
+  else sync();
+})();

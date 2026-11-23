@@ -1,6 +1,6 @@
 {
-  "name": "Finanças",
-  "short_name": "Finanças",
+  "name": "Meu Bolso",
+  "short_name": "Meu Bolso",
   "description": "Renda, gastos, metas e patrimônio, mês a mês",
   "lang": "pt-BR",
   "start_url": "./",

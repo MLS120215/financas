@@ -1,7 +1,9 @@
-# Finanças: app pessoal
+# Meu Bolso: app pessoal de finanças
 
 App instalável (PWA) para controlar renda, gastos, metas e patrimônio, mês a mês e ano a ano.
-Funciona sem internet e pode sincronizar entre celular e computador pelo seu próprio Supabase.
+Funciona sem internet e sincroniza entre celular e computador pelo Supabase do app.
+Cada pessoa entra com a própria conta (e-mail e senha), uma vez em cada aparelho.
+O endereço do Supabase e a chave pública (sb_publishable_…) ficam em `app.js` (constantes SB_URL e SB_KEY). Nunca use a Secret key.
 
 ## O que tem nesta pasta
 
@@ -31,9 +33,9 @@ Funciona sem internet e pode sincronizar entre celular e computador pelo seu pr�
 
 ## 3. Primeiro uso
 
-1. Abra o app no computador e vá em **Ajustes → Sincronização**.
-2. Cole o endereço e a chave, digite seu e-mail e uma senha e toque em **Criar conta** (depois, **Entrar**).
-3. Em **Ajustes → Backup → Importar backup**, escolha `financas-backup-2026.json`. Os dados sobem para a nuvem sozinhos.
+1. Abra o app. Na tela de entrada, toque em **Cadastrar-se** (ou **Entrar**, se já tiver conta).
+2. Para trazer dados antigos: **Ajustes → Backup → Importar backup**. Os dados sobem para a nuvem sozinhos.
+3. Esqueceu a senha? Toque em **Esqueci minha senha** e abra o link que chega por e-mail (precisa do envio de e-mails configurado no Supabase: Authentication → Emails → SMTP Settings).
 4. No celular, abra o mesmo endereço, instale o app e entre com o mesmo e-mail e senha. Os dados descem sozinhos.
 
 ## 4. Instalar
