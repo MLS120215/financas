@@ -192,6 +192,7 @@ setInterval(()=>{if(document.visibilityState==='visible')sync();},60000);
    Tela de acesso: entrar, cadastrar-se, esqueci minha senha, nova senha
    ============================================================ */
 let LOGIN_MODE='entrar', RECOVERY=null, LOGIN_BUSY=false;
+if(!document.getElementById('login')){const d=document.createElement('div');d.id='login';d.className='hidden';document.body.prepend(d);} // página antiga em cache
 function logado(){return PREVIEW?!!lsGet('previewLogin',false):syncOn();}
 function showApp(on){document.querySelector('.wrap').classList.toggle('hidden',!on);document.getElementById('login').classList.toggle('hidden',on);}
 function showLogin(msg,kind){showApp(false);renderLogin(msg,kind);}
