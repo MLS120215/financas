@@ -368,6 +368,8 @@ function render(){
   if(tab==='ano') chartAno(); if(tab==='pat') chartPat();
 }
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pendingRender)render();},0));
+document.addEventListener('click',e=>{if(FP&&e.target.isConnected&&!e.target.closest('.fwrap')){FP=null;FSTEP=null;render();}});   // tocar fora fecha
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&FP&&!document.querySelector('.modal')){if(FSTEP){FSTEP=null;}else{FP=null;}render();}});
 
 function catOpts(tipo,sel){const l=cats(tipo);return l.concat(sel&&!l.includes(sel)?[sel]:[]).map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');}
 function tipoOpts(sel){return TIPOS.map(t=>`<option ${t===sel?'selected':''}>${t}</option>`).join('');}
@@ -384,34 +386,79 @@ function diasNoMes(y,m){return new Date(y,m+1,0).getDate();}
 function isoDe(y,m,d){return `${y}-${pad(m)}-${String(d).padStart(2,'0')}`;}
 function diaDe(x){return x&&typeof x.data==='string'&&/^\d{4}-\d\d-\d\d$/.test(x.data)?+x.data.slice(8,10):0;}
 function diaPadrao(){const h=new Date();return (ano===h.getFullYear()&&cur===h.getMonth())?h.getDate():1;}
+const ICO_LIXO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
+/* janela de confirmação do próprio app (o confirm() do navegador é feio e não funciona em todo lugar) */
+function confirmar({titulo,texto,ok='Excluir'}){
+  return new Promise(res=>{
+    const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
+    w.innerHTML=`<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdX">
+      <div class="modal-ico">${ICO_LIXO}</div><h2 id="mdT">${esc(titulo)}</h2><p id="mdX">${texto}</p>
+      <div class="modal-bt"><button class="btn ghost" data-r="0">Cancelar</button><button class="btn perigo" data-r="1">${esc(ok)}</button></div></div>`;
+    const fim=v=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.focus();res(v);};
+    const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim(false);}};
+    w.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b)fim(b.dataset.r==='1');else if(e.target===w)fim(false);});
+    document.addEventListener('keydown',tecla,true);
+    document.body.appendChild(w); w.querySelector('[data-r="0"]').focus();
+  });
+}
 function limMes(){return {min:isoDe(ano,cur,1),max:isoDe(ano,cur,diasNoMes(ano,cur))};}
 const ICO_CAL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
 /* data da linha: mostra "25/11" e abre o calendário do aparelho ao tocar */
 function campoData(x){const l=limMes(),d=diaDe(x)?x.data:'';
   return `<label class="dt" title="Mudar a data">${d?`${d.slice(8,10)}/${d.slice(5,7)}`:'Sem data'}${ICO_CAL}<input type="date" data-f="data" value="${d}" min="${l.min}" max="${l.max}" aria-label="Data"></label>`;}
 function fmtData(iso){return /^\d{4}-\d\d-\d\d$/.test(iso||'')?`${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}`:'';}
-function selFiltro(attr,key,val,opts,label){
-  return `<select class="${val?'on':''}" data-${attr}="${key}" aria-label="${label}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===val?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
+/* ---------- filtro em caminho: Filtrar → escolher o tipo de filtro → escolher a opção ---------- */
+let FP=null, FSTEP=null;   // painel aberto ('mes'|'cc') e passo (null = "Filtrar por"; senão a chave do grupo)
+const ICO_FUNIL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>';
+const ICO_SETA='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+const ICO_VOLTA='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+const ICO_OK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function contar(lista,fn){const m=new Map();lista.forEach(x=>{[].concat(fn(x)).forEach(k=>m.set(k,(m.get(k)||0)+1));});return m;}
+function barraCaminho(id,grupos,o,nVis,nTot,palavra){
+  const ativos=grupos.filter(g=>o[g.k]);
+  const rot=g=>{const op=g.opts.find(([v])=>v===o[g.k]);return op?op[1]:o[g.k];};
+  let painel='';
+  if(FP===id){
+    const g=grupos.find(x=>x.k===FSTEP);
+    painel=!g?`<div class="fmenu" role="menu" aria-label="Filtrar por">
+        <div class="fmhead"><b>Filtrar por</b></div>
+        ${grupos.map(x=>`<button type="button" class="fmrow" role="menuitem" data-fstep="${x.k}"><span>${x.t}</span><span class="fmval">${o[x.k]?esc(rot(x)):x.todos}</span>${ICO_SETA}</button>`).join('')}
+      </div>`
+      :`<div class="fmenu" role="menu" aria-label="${g.t}">
+        <div class="fmhead"><button type="button" class="fmback" data-fstep="" aria-label="Voltar">${ICO_VOLTA}</button><b>${g.t}</b></div>
+        <div class="fmlist">
+        <button type="button" class="fmrow fmopt ${!o[g.k]?'on':''}" role="menuitemradio" aria-checked="${!o[g.k]}" data-fset="${id}" data-k="${g.k}" data-v=""><span>${g.todos}</span><span class="fmval">${nTot}</span><span class="fmck">${!o[g.k]?ICO_OK:''}</span></button>
+        ${g.opts.map(([v,l,n])=>`<button type="button" class="fmrow fmopt ${o[g.k]===v?'on':''}" role="menuitemradio" aria-checked="${o[g.k]===v}" data-fset="${id}" data-k="${g.k}" data-v="${esc(v)}"><span>${esc(l)}</span><span class="fmval">${n||0}</span><span class="fmck">${o[g.k]===v?ICO_OK:''}</span></button>`).join('')}
+        </div></div>`;
+  }
+  return `<div class="fbar">
+    <div class="fwrap"><button type="button" class="fbtn ${ativos.length?'on':''}" data-fp="${id}" aria-expanded="${FP===id}">${ICO_FUNIL}<span>Filtrar</span></button>${painel}</div>
+    ${ativos.map(g=>`<button type="button" class="fchip" data-fx="${id}" data-k="${g.k}" title="Tirar este filtro"><span>${g.t}: <b>${esc(rot(g))}</b></span><span class="fx" aria-hidden="true">✕</span></button>`).join('')}
+    ${ativos.length?`<span class="note fres">${nVis} de ${nTot} ${palavra}</span>`:''}
+  </div>`;
 }
-function barraFiltrosMes(todos,nVis,ativo){
-  const catsMes=[...new Set(todos.map(x=>x.cat).filter(Boolean).concat(F.cat?[F.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  return `<div class="filtros" aria-label="Filtrar lançamentos">
-    ${selFiltro('fl','tipo',F.tipo,[['','Tipo'],['entradas','Entradas (todas)'],...TIPOS.map(t=>[t,t])],'Filtrar por tipo')}
-    ${selFiltro('fl','cat',F.cat,[['','Categoria'],...catsMes.map(c=>[c,c])],'Filtrar por categoria')}
-    ${selFiltro('fl','valor',F.valor,FAIXAS,'Filtrar por valor')}
-    ${selFiltro('fl','sit',F.sit,[['','Situação'],['pago','Pago/recebido'],['pend','A pagar/receber']],'Filtrar por situação')}
-  </div>
-  ${ativo?`<div class="frow"><span class="note">Mostrando ${nVis} de ${todos.length} lançamentos</span><button type="button" class="lg-link" data-act="limparF">Limpar filtros</button></div>`:''}`;
+function barraFiltrosMes(todos,nVis){
+  const cT=contar(todos,x=>[x.tipo].concat(ENTRADA.has(x.tipo)||x.tipo==='Vale (benefício)'?['entradas']:[])), cC=contar(todos,x=>x.cat), cS=contar(todos,x=>x.pago?'pago':'pend');
+  const cV=new Map(FAIXAS.slice(1).map(([f])=>[f,todos.filter(x=>naFaixa(x.valor,f)).length]));
+  const cats=[...new Set(todos.map(x=>x.cat).filter(Boolean).concat(F.cat?[F.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  return barraCaminho('mes',[
+    {k:'tipo',t:'Tipo',todos:'Todos os tipos',opts:[['entradas','Entradas (todas)',cT.get('entradas')],...TIPOS.map(t=>[t,t,cT.get(t)])]},
+    {k:'cat',t:'Categoria',todos:'Todas as categorias',opts:cats.map(c=>[c,c,cC.get(c)])},
+    {k:'valor',t:'Valor',todos:'Qualquer valor',opts:FAIXAS.slice(1).map(([f,l])=>[f,l,cV.get(f)])},
+    {k:'sit',t:'Situação',todos:'Todas as situações',opts:[['pago','Pago / recebido',cS.get('pago')],['pend','A pagar / receber',cS.get('pend')]]}],F,nVis,todos.length,'lançamentos');
 }
-function barraFiltrosCC(compras,ativo){
-  const catsCC=[...new Set(compras.map(x=>x.cat).filter(Boolean).concat(FC.cat?[FC.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  return `<section class="card"><div class="row"><h2>Filtrar compras</h2>${ativo?'<button type="button" class="lg-link" data-act="limparFC">Limpar filtros</button>':''}</div>
-    <div class="filtros${CARTOES.length>1?' f5':''}" aria-label="Filtrar compras no cartão">
-    ${CARTOES.length>1?selFiltro('fc','cartao',FC.cartao,[['','Cartão'],...CARTOES.map(k=>[k.id,k.nome])],'Filtrar por cartão'):''}
-    ${selFiltro('fc','cat',FC.cat,[['','Categoria'],...catsCC.map(c=>[c,c])],'Filtrar por categoria')}
-    ${selFiltro('fc','valor',FC.valor,FAIXAS,'Filtrar por valor')}
-    ${selFiltro('fc','sit',FC.sit,[['','Situação'],['avista','À vista'],['parcelada','Parceladas'],['terceiro','De outra pessoa']],'Filtrar por situação')}
-  </div></section>`;
+function barraFiltrosCC(compras){
+  const cK=contar(compras,x=>x.cartao), cC=contar(compras,x=>x.cat);
+  const cV=new Map(FAIXAS.slice(1).map(([f])=>[f,compras.filter(x=>naFaixa(x.valor,f)).length]));
+  const cS=new Map(['avista','parcelada','terceiro'].map(k=>[k,compras.filter(x=>compraSitOk(k,x)).length]));
+  const cats=[...new Set(compras.map(x=>x.cat).filter(Boolean).concat(FC.cat?[FC.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const grupos=[];
+  if(CARTOES.length>1) grupos.push({k:'cartao',t:'Cartão',todos:'Todos os cartões',opts:CARTOES.map(k=>[k.id,k.nome,cK.get(k.id)])});
+  grupos.push({k:'cat',t:'Categoria',todos:'Todas as categorias',opts:cats.map(c=>[c,c,cC.get(c)])},
+    {k:'valor',t:'Valor',todos:'Qualquer valor',opts:FAIXAS.slice(1).map(([f,l])=>[f,l,cV.get(f)])},
+    {k:'sit',t:'Situação',todos:'Todas as compras',opts:[['avista','À vista',cS.get('avista')],['parcelada','Parceladas',cS.get('parcelada')],['terceiro','De outra pessoa',cS.get('terceiro')]]});
+  const nVis=compras.filter(x=>(!FC.cartao||x.cartao===FC.cartao)&&(!FC.cat||x.cat===FC.cat)&&naFaixa(x.valor,FC.valor)&&compraSitOk(FC.sit,x)).length;
+  return `<section class="card fcard">${barraCaminho('cc',grupos,FC,nVis,compras.length,'compras')}</section>`;
 }
 
 function prevMonth(){return cur>0?S.months[cur-1]:(Y[ano-1]?Y[ano-1].months[11]:[]);}
@@ -433,7 +480,7 @@ function viewMes(){
       <td style="min-width:150px"><select class="cell" data-f="cat" aria-label="Categoria">${catOpts(x.tipo,x.cat)}</select></td>
       <td style="min-width:110px"><input class="cell num" data-f="valor" inputmode="decimal" value="${fmtIn(x.valor)}" aria-label="Valor" ${hide()?'readonly':''}></td>
       <td><button class="paid ${x.pago?'yes':'no'}" data-act="pago">${x.pago?(ENTRADA.has(x.tipo)?'Recebido':'Pago'):(ENTRADA.has(x.tipo)?'A receber':'A pagar')}</button></td>
-      <td><button class="del" data-act="del" title="Apagar lançamento" aria-label="Apagar">×</button></td></tr>`).join('');
+      <td><button class="del" data-act="del" title="Excluir lançamento" aria-label="Excluir lançamento ${esc(x.desc)}">${ICO_LIXO}</button></td></tr>`).join('');
   return `<div style="display:flex;flex-direction:column;gap:16px">
   <div class="kpis">
     <div class="kpi"><span class="l">Renda</span><span class="v">${brl(c.renda)}</span><span class="s">+ ${brl0(c.reemb)} de reembolsos</span></div>
@@ -454,7 +501,7 @@ function viewMes(){
         <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="aPago" checked> Pago</label>
         <button class="btn" type="submit">Adicionar</button>
       </form>
-      ${todos.length?barraFiltrosMes(todos,items.length,fAtivo):''}
+      ${todos.length?barraFiltrosMes(todos,items.length):''}
       <div class="tbl" id="lanc"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead>
       <tbody>${rows||(fAtivo&&todos.length?`<tr><td colspan="7" class="note" style="padding:16px 6px">Nenhum lançamento com esses filtros.</td></tr>`:S.cc[cur].compras.length?'':`<tr><td colspan="7" class="note" style="padding:16px 6px">Nenhum lançamento em ${MESL[cur]} ainda.${prevHas?' Use "Copiar fixos" ao lado para trazer as contas do mês anterior.':''}</td></tr>`)}</tbody></table></div>
       ${blocoFaturasMes()}
@@ -593,7 +640,7 @@ function viewCartoes(){
       <td style="min-width:180px"><input class="cell" data-ccf="desc" value="${esc(x.desc)}" aria-label="Descrição"><div class="note" style="padding:0 6px 3px">${[x.data?fmtData(x.data):'',x.total>1?`Parcela ${x.parcela} de ${x.total}`:'',x.terceiro?`de ${esc(x.quem||'outra pessoa')} (vira reembolso)`:''].filter(Boolean).join(' · ')}</div></td>
       <td style="min-width:140px"><select class="cell" data-ccf="cat" aria-label="Categoria">${catOpts('Despesa',x.cat)}</select></td>
       <td style="min-width:100px"><input class="cell num" data-ccf="valor" inputmode="decimal" value="${fmtIn(x.valor)}" aria-label="Valor" ${hide()?'readonly':''}></td>
-      <td><button class="del" data-act="delcc" title="${x.total>1?'Apagar a compra e todas as parcelas':'Apagar compra'}" aria-label="Apagar">×</button></td></tr>`).join('');
+      <td><button class="del" data-act="delcc" title="${x.total>1?'Excluir a compra e todas as parcelas':'Excluir compra'}" aria-label="Excluir compra ${esc(x.desc)}">${ICO_LIXO}</button></td></tr>`).join('');
     return `<section class="card"><div class="row"><div><h2>${esc(k.nome)} · fatura de ${MESL[cur]}</h2><div class="note">Vence em ${venc} · fecha todo dia ${k.fecha}</div></div>
       <div class="row" style="gap:10px"><span style="font-family:var(--display);font-size:22px">${brl(f.total)}</span>${f.n?`<button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(k.id)}">${f.pago?'Pago':'A pagar'}</button>`:''}</div></div>
       ${barraLimite(k)}
@@ -611,7 +658,7 @@ function viewCartoes(){
   </div>
   <div class="grid2">
     <div style="display:flex;flex-direction:column;gap:16px">
-      ${CARTOES.length&&c.compras.length?barraFiltrosCC(c.compras,fcAtivo):''}
+      ${CARTOES.length&&c.compras.length?barraFiltrosCC(c.compras):''}
       ${CARTOES.length?CARTOES.map(blocoCartao).join(''):`<section class="card"><h2>Comece cadastrando um cartão</h2><div class="note">Use o card "Seus cartões" ao lado. Você vai precisar do dia em que a fatura fecha e do dia em que ela vence.</div></section>`}
     </div>
     <aside style="display:flex;flex-direction:column;gap:16px">
@@ -785,6 +832,10 @@ document.addEventListener('pointerover',e=>{const f=e.target.closest&&e.target.c
 document.addEventListener('pointerout',e=>{if(e.pointerType!=='mouse')return;const box=e.target.closest&&e.target.closest('.rosca');if(box&&!box.contains(e.relatedTarget))roscaLimpa(box);});
 document.addEventListener('click',e=>{const f=e.target.closest&&e.target.closest('.rosca [data-fatia]');if(f){roscaFoco(f);return;}document.querySelectorAll('.rosca.foco').forEach(roscaLimpa);}); // no celular: toca para destacar, toca fora para voltar
 V.addEventListener('click',e=>{
+  const fpb=e.target.closest('[data-fp]'); if(fpb){FP=FP===fpb.dataset.fp?null:fpb.dataset.fp;FSTEP=null;render();return;}
+  const fst=e.target.closest('[data-fstep]'); if(fst){FSTEP=fst.dataset.fstep||null;render();const r=document.querySelector('.fmenu .fmrow, .fmenu .fmback');r&&r.focus();return;}
+  const fse=e.target.closest('[data-fset]'); if(fse){const o=fse.dataset.fset==='mes'?F:FC;o[fse.dataset.k]=fse.dataset.v;FP=null;FSTEP=null;render();return;}
+  const fxx=e.target.closest('[data-fx]'); if(fxx){const o=fxx.dataset.fx==='mes'?F:FC;o[fxx.dataset.k]='';render();return;}
   const gb=e.target.closest('[data-graf]'); if(gb){lsSet('grafCat',gb.dataset.graf);render();return;}
   const g=e.target.closest('[data-goto]'); if(g){tab=g.dataset.goto;render();return;}
   const cor=e.target.closest('[data-cor]'); if(cor){setSetting({cor:cor.dataset.cor});render();return;}
@@ -814,7 +865,10 @@ V.addEventListener('click',e=>{
   if(act==='apagarSim'){DOCS={};saveDocs();lsSet('lastSync',0);hydrate();ano=HOJE_ANO;S=yr(ano);applyLook();render();showBanner('Os dados deste aparelho foram apagados.');return;}
   if(act==='fatpago'){const f=S.cc[cur].faturas,id=a.dataset.card;f[id]=Object.assign({},f[id],{pago:!(f[id]||{}).pago});touch(ccKey(ano,cur));render();return;}
   if(act==='tercrec'){const x=S.cc[cur].compras.find(z=>z.id===a.dataset.id);if(x){x.recebido=!x.recebido;touch(ccKey(ano,cur));}render();return;}
-  if(act==='delcc'){const tr=a.closest('tr[data-cc]');const x=tr&&S.cc[cur].compras.find(z=>z.id===tr.dataset.cc);if(x)apagarGrupo(x.grupo);render();return;}
+  if(act==='delcc'){const tr=a.closest('tr[data-cc]');const x=tr&&S.cc[cur].compras.find(z=>z.id===tr.dataset.cc);if(!x)return;
+    let tot=0,n=0;cadaCompra(z=>{if(z.grupo===x.grupo){tot+=Number(z.valor)||0;n++;}});
+    const txt=x.total>1?`A compra <b>${esc(x.desc)}</b> e todas as suas <b>${n} parcelas</b> (${brl(tot)} no total) serão excluídas de todas as faturas.`:`A compra <b>${esc(x.desc)}</b> (${brl(x.valor)}${x.data?', '+fmtData(x.data):''}) será excluída da fatura.`;
+    confirmar({titulo:x.total>1?'Excluir esta compra parcelada?':'Excluir esta compra?',texto:txt+' Isso não pode ser desfeito.',ok:'Excluir'}).then(sim=>{if(sim){apagarGrupo(x.grupo);render();}});return;}
   if(act==='difcc'){const v=Number(a.dataset.dif);if(v>0){S.cc[cur].compras.push({id:uid(),grupo:uid(),cartao:a.dataset.card,data:'',desc:'Diferença da fatura',cat:'Outros',valor:v,parcela:1,total:1,terceiro:false,quem:'',recebido:false});touch(ccKey(ano,cur));}render();return;}
   if(act==='copiar'){
     const fixos=prevMonth().filter(x=>{
@@ -833,7 +887,10 @@ V.addEventListener('click',e=>{
   }
   const tr=a.closest('tr[data-i]'); if(!tr) return;
   if(act==='pago'){const it=S.months[cur][+tr.dataset.i]; it.pago=!it.pago;}
-  if(act==='del'){S.months[cur].splice(+tr.dataset.i,1);}
+  if(act==='del'){const it=S.months[cur][+tr.dataset.i]; if(!it) return; const m=cur, y=ano;
+    confirmar({titulo:'Excluir este lançamento?',texto:`O lançamento <b>${esc(it.desc)}</b> (${brl(it.valor)}${it.data?', '+fmtData(it.data):''}) será excluído. Isso não pode ser desfeito.`,ok:'Excluir'})
+      .then(sim=>{if(!sim)return;const arr=yr(y).months[m],i=arr.indexOf(it);if(i>=0){arr.splice(i,1);touch(monthKey(y,m));}render();});
+    return;}
   touch(monthKey(ano,cur)); render();
 });
 V.addEventListener('change',e=>{
