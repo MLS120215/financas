@@ -384,7 +384,11 @@ function diasNoMes(y,m){return new Date(y,m+1,0).getDate();}
 function isoDe(y,m,d){return `${y}-${pad(m)}-${String(d).padStart(2,'0')}`;}
 function diaDe(x){return x&&typeof x.data==='string'&&/^\d{4}-\d\d-\d\d$/.test(x.data)?+x.data.slice(8,10):0;}
 function diaPadrao(){const h=new Date();return (ano===h.getFullYear()&&cur===h.getMonth())?h.getDate():1;}
-function diaOpts(sel,vazio){const n=diasNoMes(ano,cur);let o=vazio?`<option value="" ${!sel?'selected':''}>Sem data</option>`:'';for(let d=1;d<=n;d++)o+=`<option value="${d}" ${+sel===d?'selected':''}>${String(d).padStart(2,'0')}/${pad(cur)}</option>`;return o;}
+function limMes(){return {min:isoDe(ano,cur,1),max:isoDe(ano,cur,diasNoMes(ano,cur))};}
+const ICO_CAL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
+/* data da linha: mostra "25/11" e abre o calendário do aparelho ao tocar */
+function campoData(x){const l=limMes(),d=diaDe(x)?x.data:'';
+  return `<label class="dt" title="Mudar a data">${d?`${d.slice(8,10)}/${d.slice(5,7)}`:'Sem data'}${ICO_CAL}<input type="date" data-f="data" value="${d}" min="${l.min}" max="${l.max}" aria-label="Data"></label>`;}
 function fmtData(iso){return /^\d{4}-\d\d-\d\d$/.test(iso||'')?`${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}`:'';}
 function selFiltro(attr,key,val,opts,label){
   return `<select class="${val?'on':''}" data-${attr}="${key}" aria-label="${label}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===val?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
@@ -423,7 +427,7 @@ function viewMes(){
   const cl=Object.entries(ct).sort((a,b)=>b[1]-a[1]); const mx=cl.length?cl[0][1]:1;
   const prevHas=prevMonth().length, prevLbl=cur>0?MESL[cur-1]:'Dezembro de '+(ano-1);
   const rows=items.map(x=>`<tr data-i="${x._i}">
-      <td style="min-width:92px"><select class="cell dia" data-f="dia" aria-label="Data">${diaOpts(diaDe(x),true)}</select></td>
+      <td style="min-width:84px">${campoData(x)}</td>
       <td style="min-width:200px"><input class="cell" data-f="desc" value="${esc(x.desc)}" aria-label="Descrição">${x.obs?`<div class="note" style="padding:0 6px 3px">${esc(x.obs)}</div>`:''}</td>
       <td style="min-width:150px"><select class="cell" data-f="tipo" aria-label="Tipo">${tipoOpts(x.tipo)}</select></td>
       <td style="min-width:150px"><select class="cell" data-f="cat" aria-label="Categoria">${catOpts(x.tipo,x.cat)}</select></td>
@@ -443,10 +447,10 @@ function viewMes(){
       <h2>Lançamentos de ${MESL[cur]}</h2>
       <form class="add" id="addForm">
         <input id="aDesc" placeholder="Descrição (ex.: Mercado)" required>
-        <label class="adia"><span>Data</span><select id="aDia" aria-label="Data do lançamento">${diaOpts(diaPadrao(),false)}</select></label>
+        <label class="adia"><span>Data</span><input type="date" id="aData" value="${isoDe(ano,cur,diaPadrao())}" min="${limMes().min}" max="${limMes().max}" aria-label="Data do lançamento" required></label>
         <select id="aTipo">${tipoOpts('Despesa')}</select>
         <select id="aCat">${catOpts('Despesa','Alimentação')}</select>
-        <input id="aVal" placeholder="Valor" inputmode="decimal" required>
+        <input id="aVal" placeholder="Valor (R$)" inputmode="decimal" autocomplete="off" required>
         <label class="note" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="aPago" checked> Pago</label>
         <button class="btn" type="submit">Adicionar</button>
       </form>
@@ -456,8 +460,8 @@ function viewMes(){
       ${blocoFaturasMes()}
     </section>
     <aside style="display:flex;flex-direction:column;gap:16px">
-      <section class="card"><h2>Para onde foi o dinheiro</h2>
-        <div class="bars">${cl.length?cl.map(([k,v])=>`<div class="bar"><div class="t"><span>${esc(k)}</span><span>${brl(v)}</span></div><div class="track"><div class="fill" style="width:${Math.max(2,v/mx*100)}%"></div></div></div>`).join(''):'<div class="note">Sem despesas lançadas.</div>'}</div>
+      <section class="card"><div class="row"><h2>Para onde foi o dinheiro</h2>${cl.length?`<div class="seg" role="group" aria-label="Tipo de gráfico"><button class="${grafTipo()==='rosca'?'on':''}" data-graf="rosca" aria-pressed="${grafTipo()==='rosca'}">Rosca</button><button class="${grafTipo()==='barras'?'on':''}" data-graf="barras" aria-pressed="${grafTipo()==='barras'}">Barras</button></div>`:''}</div>
+        ${!cl.length?'<div class="note">Sem despesas lançadas.</div>':grafTipo()==='rosca'?rosca(cl):`<div class="bars">${cl.map(([k,v])=>`<div class="bar"><div class="t"><span>${esc(k)}</span><span>${brl(v)}</span></div><div class="track"><div class="fill" style="width:${Math.max(2,v/mx*100)}%"></div></div></div>`).join('')}</div>`}
         ${ct['Cartão de crédito']?'<div class="note">"Cartão de crédito" é uma fatura lançada inteira. Na aba Cartões, cada compra entra na sua categoria.</div>':''}
       </section>
       <section class="card"><h2>Começar o mês</h2>
@@ -466,6 +470,27 @@ function viewMes(){
       ${c.vale?`<section class="card"><h2>Vale alimentação</h2><div class="note">${brl(c.vale)} recebidos em vale. Fica fora do saldo.</div></section>`:''}
     </aside>
   </div></div>`;
+}
+/* ---------- gráfico de rosca: despesas por categoria ---------- */
+function grafTipo(){return lsGet('grafCat','rosca')==='barras'?'barras':'rosca';}
+function rosca(cl){
+  const MAXF=7, tot=cl.reduce((a,[,v])=>a+v,0);
+  let fatias=cl.slice(0,MAXF).map(([k,v],i)=>({k,v,c:`var(--s${i+1})`}));
+  if(cl.length>MAXF){const resto=cl.slice(MAXF);fatias.push({k:resto.length===1?resto[0][0]:`Outras (${resto.length})`,v:resto.reduce((a,[,v])=>a+v,0),c:'var(--s-outras)',lista:resto.map(r=>r[0]).join(', ')});}
+  const R=92,r=60,C=100, pt=(rad,a)=>[C+rad*Math.sin(a),C-rad*Math.cos(a)];
+  let a0=0;
+  const paths=fatias.map((f,i)=>{
+    const fr=tot?f.v/tot:0, a1=a0+fr*2*Math.PI; let d;
+    if(fr>=0.9999){d=`M${C} ${C-R}A${R} ${R} 0 1 1 ${C-0.01} ${C-R}ZM${C} ${C-r}A${r} ${r} 0 1 0 ${C+0.01} ${C-r}Z`;}
+    else{const big=a1-a0>Math.PI?1:0,[x0,y0]=pt(R,a0),[x1,y1]=pt(R,a1),[x2,y2]=pt(r,a1),[x3,y3]=pt(r,a0);
+      d=`M${x0.toFixed(2)} ${y0.toFixed(2)}A${R} ${R} 0 ${big} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}L${x2.toFixed(2)} ${y2.toFixed(2)}A${r} ${r} 0 ${big} 0 ${x3.toFixed(2)} ${y3.toFixed(2)}Z`;}
+    a0=a1;
+    return `<path d="${d}" fill="${f.c}" data-fatia="${i}" fill-rule="evenodd"><title>${esc(f.k)}: ${brl(f.v)} (${pct(fr)})</title></path>`;}).join('');
+  const leg=fatias.map((f,i)=>`<li data-fatia="${i}"${f.lista?` title="${esc(f.lista)}"`:''}><span class="sq" style="background:${f.c}"></span><span class="nm">${esc(f.k)}</span><span class="vl">${brl(f.v)}</span><span class="pc">${pct(tot?f.v/tot:0)}</span></li>`).join('');
+  return `<div class="rosca" data-tot="${esc(brl(tot))}">
+    <div class="rosca-g"><svg viewBox="0 0 200 200" role="img" aria-label="Gráfico de rosca das despesas por categoria">${paths}</svg>
+      <div class="rosca-c"><span class="rc-l">Despesas do mês</span><b class="rc-v">${brl(tot)}</b></div></div>
+    <ul class="rosca-leg">${leg}</ul></div>`;
 }
 function nomeCartao(id){const c=CARTOES.find(x=>x.id===id);return c?c.nome:'Cartão removido';}
 function faturasDoMes(Yy,m){const c=Yy.cc[m];const g={};c.compras.forEach(x=>{(g[x.cartao]=g[x.cartao]||{id:x.cartao,total:0,n:0});g[x.cartao].total+=Number(x.valor)||0;g[x.cartao].n++;});return Object.values(g).map(f=>({...f,pago:!!(c.faturas[f.id]||{}).pago,banco:(c.faturas[f.id]||{}).banco}));}
@@ -722,8 +747,45 @@ document.getElementById('years').addEventListener('click',e=>{
 document.getElementById('eye').addEventListener('click',()=>{setSetting({ocultar:!settings().ocultar});render();});
 document.getElementById('fileIn').addEventListener('change',e=>{const f=e.target.files[0];if(f)importar(f);e.target.value='';});
 
+/* ---------- campos de valor: só números, com vírgula para os centavos ---------- */
+const ehMoeda=el=>!!el&&el.tagName==='INPUT'&&el.getAttribute('inputmode')==='decimal';
+function soMoeda(s){
+  s=String(s||'').replace(/[^\d.,]/g,'');                       // tira letras, espaços e símbolos
+  const i=s.lastIndexOf(',');
+  let int=(i>=0?s.slice(0,i):s).replace(/,/g,'');
+  const dec=i>=0?s.slice(i+1).replace(/[.,]/g,'').slice(0,2):null; // no máximo 2 casas de centavos
+  int=int.replace(/^0+(?=\d)/,'').slice(0,13);
+  return dec===null?int:(int||'0')+','+dec;
+}
+const fmtMoeda=v=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const MSG_FALTA={aDesc:'Escreva uma descrição (ex.: Mercado).',cfDesc:'Escreva uma descrição (ex.: Mercado).',aVal:'Digite o valor, só com números (ex.: 18,50).',cfValor:'Digite o valor total, só com números (ex.: 297,00).'};
+document.addEventListener('input',e=>{
+  const t=e.target; if(t&&t.setCustomValidity) t.setCustomValidity('');
+  if(!ehMoeda(t)) return;
+  const v=t.value, nv=soMoeda(v); if(v===nv) return;
+  const pos=Math.min(soMoeda(v.slice(0,t.selectionStart||v.length)).length,nv.length);
+  t.value=nv; try{t.setSelectionRange(pos,pos);}catch(_){}
+},true);
+document.addEventListener('invalid',e=>{const t=e.target;if(t.validity&&t.validity.valueMissing&&MSG_FALTA[t.id])t.setCustomValidity(MSG_FALTA[t.id]);},true);
+document.addEventListener('focusout',e=>{const t=e.target;if(ehMoeda(t)&&!t.readOnly&&['aVal','cfValor','kLimite'].includes(t.id)&&t.value){const n=parseBR(t.value);t.value=n?fmtMoeda(n):'';}},true);
+function avisoCampo(el,msg){el.setCustomValidity(msg);el.reportValidity();el.focus();}
+
+document.addEventListener('click',e=>{const l=e.target.closest('label.dt, label.adia');if(!l)return;const i=l.querySelector('input[type=date]');if(i&&e.target!==i&&i.showPicker){try{i.showPicker();e.preventDefault();}catch(_){}}});
 const V=document.getElementById('view');
+function roscaFoco(el){
+  const box=el&&el.closest('.rosca'); if(!box) return;
+  const i=el.dataset.fatia, li=box.querySelector(`li[data-fatia="${i}"]`);
+  box.classList.toggle('foco',i!=null);
+  box.querySelectorAll('[data-fatia]').forEach(x=>x.classList.toggle('on',x.dataset.fatia===i));
+  const l=box.querySelector('.rc-l'), v=box.querySelector('.rc-v');
+  if(i!=null&&li){l.textContent=li.querySelector('.nm').textContent+' · '+li.querySelector('.pc').textContent;v.textContent=li.querySelector('.vl').textContent;}
+}
+function roscaLimpa(box){if(!box)return;box.classList.remove('foco');box.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));box.querySelector('.rc-l').textContent='Despesas do mês';box.querySelector('.rc-v').textContent=box.dataset.tot;}
+document.addEventListener('pointerover',e=>{const f=e.target.closest&&e.target.closest('.rosca [data-fatia]');if(f)roscaFoco(f);});
+document.addEventListener('pointerout',e=>{if(e.pointerType!=='mouse')return;const box=e.target.closest&&e.target.closest('.rosca');if(box&&!box.contains(e.relatedTarget))roscaLimpa(box);});
+document.addEventListener('click',e=>{const f=e.target.closest&&e.target.closest('.rosca [data-fatia]');if(f){roscaFoco(f);return;}document.querySelectorAll('.rosca.foco').forEach(roscaLimpa);}); // no celular: toca para destacar, toca fora para voltar
 V.addEventListener('click',e=>{
+  const gb=e.target.closest('[data-graf]'); if(gb){lsSet('grafCat',gb.dataset.graf);render();return;}
   const g=e.target.closest('[data-goto]'); if(g){tab=g.dataset.goto;render();return;}
   const cor=e.target.closest('[data-cor]'); if(cor){setSetting({cor:cor.dataset.cor});render();return;}
   const dc=e.target.closest('[data-delcat]'); if(dc){const s=settings(),tp=dc.dataset.tipo,c=dc.dataset.delcat;
@@ -779,7 +841,7 @@ V.addEventListener('change',e=>{
   if(t.id==='aTipo'){document.getElementById('aCat').innerHTML=catOpts(t.value);return;}
   if(t.dataset.fl){F[t.dataset.fl]=t.value;t.blur();render();return;}
   if(t.dataset.fc){FC[t.dataset.fc]=t.value;t.blur();render();return;}
-  if(t.id==='aDia') return;
+  if(t.id==='aData') return;
   if(t.id==='stNome'){setSetting({nome:t.value.trim()});t.blur();render();return;}
   if(t.id==='stTema'){setSetting({tema:t.value});t.blur();render();return;}
   if(t.id==='stOcultar'){setSetting({ocultar:t.checked});render();return;}
@@ -788,7 +850,8 @@ V.addEventListener('change',e=>{
   if(t.dataset.cardlim!=null){const k=CARTOES.find(z=>z.id===t.dataset.cardlim);if(k){k.limite=t.value.trim()===''?null:parseBR(t.value);touch('cartoes');}t.blur();render();return;}
   if(t.dataset.banco!=null){const f=S.cc[cur].faturas,id=t.dataset.banco;f[id]=Object.assign({},f[id],{banco:t.value.trim()===''?null:parseBR(t.value)});touch(ccKey(ano,cur));t.blur();render();return;}
   const trc=t.closest('tr[data-cc]'); if(trc&&t.dataset.ccf){const x=S.cc[cur].compras.find(z=>z.id===trc.dataset.cc); if(!x) return;
-    if(t.dataset.ccf==='valor'){x.valor=parseBR(t.value);touch(ccKey(ano,cur));}
+    if(t.dataset.ccf==='valor'){const nv=parseBR(t.value);if(!(nv>0)){showBanner('O valor precisa ser um número maior que zero. O valor anterior foi mantido.',true);t.blur();render();return;}x.valor=nv;touch(ccKey(ano,cur));}
+    else if(t.dataset.ccf==='desc'&&!t.value.trim()){showBanner('A descrição não pode ficar vazia. A anterior foi mantida.',true);t.blur();render();return;}
     else{const fld=t.dataset.ccf,val=t.value,g=x.grupo,keys=new Set();cadaCompra((z,y,m)=>{if(z.grupo===g){z[fld]=val;keys.add(ccKey(y,m));}});keys.forEach(touch);}
     t.blur();render();return;}
   if(/^sb/.test(t.id)||t.id==='aDesc'||t.id==='aVal'||t.id==='aCat'||t.id==='aPago'||t.id==='bankName'||t.closest('[data-addcat]')) return;
@@ -798,7 +861,11 @@ V.addEventListener('change',e=>{
     arr[+t.dataset.m]=t.value.trim()===''?null:parseBR(t.value);touch(cfgKey(ano));t.blur();render();return;}
   const tr=t.closest('tr[data-i]'); if(!tr||!t.dataset.f) return;
   const it=S.months[cur][+tr.dataset.i], fld=t.dataset.f;
-  if(fld==='dia'){ if(t.value) it.data=isoDe(ano,cur,+t.value); else delete it.data; }
+  if(fld==='valor'&&!(parseBR(t.value)>0)){showBanner('O valor precisa ser um número maior que zero. O valor anterior foi mantido.',true);t.blur();render();return;}
+  if(fld==='desc'&&!t.value.trim()){showBanner('A descrição não pode ficar vazia. A anterior foi mantida.',true);t.blur();render();return;}
+  if(fld==='data'){ if(!t.value) delete it.data;
+    else if(t.value.slice(0,7)===`${ano}-${pad(cur)}`) it.data=t.value;
+    else {showBanner(`Escolha um dia de ${MESL[cur]}. Para lançar em outro mês, abra esse mês na barra de meses.`,true);t.blur();render();return;} }
   else if(fld==='valor') it.valor=parseBR(t.value);
   else if(fld==='tipo'){it.tipo=t.value; if(!cats(it.tipo).includes(it.cat)) it.cat=cats(it.tipo)[0]||'Outros';}
   else it[fld]=t.value;
@@ -809,14 +876,18 @@ V.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('input.cel
 V.addEventListener('submit',e=>{
   e.preventDefault(); const fm=e.target;
   if(fm.id==='addForm'){
-    const d=document.getElementById('aDesc').value.trim(), v=parseBR(document.getElementById('aVal').value); if(!d||!v) return;
-    S.months[cur].push({id:uid(),data:isoDe(ano,cur,+document.getElementById('aDia').value||diaPadrao()),desc:d,tipo:document.getElementById('aTipo').value,cat:document.getElementById('aCat').value,valor:v,pago:document.getElementById('aPago').checked});
+    const dEl=document.getElementById('aDesc'), vEl=document.getElementById('aVal'), d=dEl.value.trim(), v=parseBR(vEl.value);
+    if(!d){avisoCampo(dEl,MSG_FALTA.aDesc);return;}
+    if(!(v>0)){avisoCampo(vEl,'Digite um valor maior que zero, só com números (ex.: 18,50).');return;}
+    S.months[cur].push({id:uid(),data:(v=>v&&v.slice(0,7)===`${ano}-${pad(cur)}`?v:isoDe(ano,cur,diaPadrao()))(document.getElementById('aData').value),desc:d,tipo:document.getElementById('aTipo').value,cat:document.getElementById('aCat').value,valor:v,pago:document.getElementById('aPago').checked});
     yr(ano).keep=true; touch(monthKey(ano,cur)); document.activeElement&&document.activeElement.blur(); render();
     setTimeout(()=>{const x=document.getElementById('aDesc');x&&x.focus();},0); return;
   }
   if(fm.id==='ccForm'){
     const desc=document.getElementById('cfDesc').value.trim(), valor=parseBR(document.getElementById('cfValor').value), data=document.getElementById('cfData').value;
-    if(!desc||!valor||!data) return;
+    if(!desc){avisoCampo(document.getElementById('cfDesc'),MSG_FALTA.cfDesc);return;}
+    if(!(valor>0)){avisoCampo(document.getElementById('cfValor'),'Digite um valor maior que zero, só com números (ex.: 297,00).');return;}
+    if(!data){avisoCampo(document.getElementById('cfData'),'Escolha a data da compra.');return;}
     const quem=document.getElementById('cfQuem').value.trim();
     const f=addCompra({cartao:document.getElementById('cfCartao').value,data,desc,cat:document.getElementById('cfCat').value,valor,n:+document.getElementById('cfParc').value||1,terceiro:!!quem,quem});
     document.activeElement&&document.activeElement.blur(); render();

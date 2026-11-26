@@ -176,6 +176,28 @@ td.num{white-space:nowrap}
   .add #aDesc{grid-column:1/3}
 }
 @media (prefers-reduced-motion:no-preference){.fill{transition:width .3s ease}}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;background:var(--bg)}
+.seg button{border:0;background:none;color:var(--muted);font:600 12px var(--body);padding:4px 12px;border-radius:999px;cursor:pointer}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.rosca{display:flex;flex-direction:column;gap:12px}
+.rosca-g{position:relative;width:min(220px,100%);margin:0 auto;aspect-ratio:1}
+.rosca-g svg{width:100%;height:100%;display:block;overflow:visible}
+.rosca-g path{stroke:var(--surface);stroke-width:2;stroke-linejoin:round;cursor:pointer;transition:opacity .15s,transform .15s;transform-origin:100px 100px}
+.rosca.foco path{opacity:.35}.rosca.foco path.on{opacity:1;transform:scale(1.035)}
+.rosca-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;padding:0 22%}
+.rc-l{font-size:11.5px;color:var(--muted);line-height:1.25}
+.rc-v{font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rosca-leg{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.rosca-leg li{display:grid;grid-template-columns:12px minmax(0,1fr) auto 46px;gap:8px;align-items:center;font-size:13px;padding:5px 4px;border-radius:6px;cursor:default}
+.rosca-leg li.on{background:var(--accent-soft)}
+.rosca-leg .sq{width:12px;height:12px;border-radius:3px}
+.rosca-leg .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rosca-leg .vl{font-variant-numeric:tabular-nums}
+.rosca-leg .pc{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;font-size:12px}
+:root{--s1:#257de0;--s2:#f47230;--s3:#00b894;--s4:#f2a600;--s5:#ee7fac;--s6:#008a17;--s7:#6a4ce2;--s-outras:#9aa5a0}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--s1:#338ced;--s2:#e76624;--s3:#00a888;--s4:#d28e05;--s5:#e24d8b;--s6:#0aac23;--s7:#9887ef;--s-outras:#6f7b75}}
+:root[data-theme="dark"]{--s1:#338ced;--s2:#e76624;--s3:#00a888;--s4:#d28e05;--s5:#e24d8b;--s6:#0aac23;--s7:#9887ef;--s-outras:#6f7b75}
+@media (prefers-reduced-motion:reduce){.rosca-g path{transition:none}}
 /* tela de acesso */
 :root{--brand:#1f5c46}
 #login{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:calc(28px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
@@ -207,8 +229,13 @@ td.num{white-space:nowrap}
 .frow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:-4px}
 .adia{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:0 0 0 8px;background:var(--surface);min-width:0}
 .adia span{font-size:12px;color:var(--muted)}
-.add .adia select{border:0;padding:8px 4px;flex:1;min-width:0;background:none}
-select.cell.dia{font-variant-numeric:tabular-nums;color:var(--muted);min-width:84px}
+.add .adia input{border:0;padding:8px 4px;flex:1;min-width:0;background:none;font:inherit;color:inherit}
+.add .adia{cursor:pointer}
+.dt{position:relative;display:inline-flex;align-items:center;gap:6px;padding:5px 6px;border:1px solid transparent;border-radius:6px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;font-size:13.5px}
+.dt:hover,.dt:focus-within{border-color:var(--line);color:var(--ink)}
+.dt svg{width:14px;height:14px;opacity:.75;flex:0 0 auto}
+.dt input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;margin:0;cursor:pointer;font-size:16px}
+.dt input::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:auto;height:auto;opacity:0;cursor:pointer}
 @media (max-width:640px){
   .filtros{grid-template-columns:1fr 1fr}
   #lanc tr[data-i]{grid-template-columns:62px minmax(0,.3fr) minmax(0,1fr) minmax(0,1fr) 84px 28px}
@@ -220,7 +247,7 @@ select.cell.dia{font-variant-numeric:tabular-nums;color:var(--muted);min-width:8
   #lanc tr[data-i] td:nth-child(6){grid-column:5;grid-row:2;justify-self:end}
   #lanc tr[data-i] td:nth-child(7){grid-column:6;grid-row:2;justify-self:end}
   #lanc tr[data-i] select.cell{-webkit-appearance:none;appearance:none;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a968f' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 3px center/8px auto;padding:5px 14px 5px 4px;text-overflow:ellipsis}
-  #lanc tr[data-i] select.cell.dia{font-size:12px}
+  #lanc tr[data-i] .dt{font-size:12.5px;padding:5px 2px;gap:4px}
 }
 </style>
 </head>
@@ -255,6 +282,6 @@ select.cell.dia{font-variant-numeric:tabular-nums;color:var(--muted);min-width:8
 </div>
 <input type="file" id="fileIn" accept="application/json,.json" class="hidden">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
