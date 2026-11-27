@@ -377,6 +377,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&FP&&!document.query
 function catOpts(tipo,sel){const l=cats(tipo);return l.concat(sel&&!l.includes(sel)?[sel]:[]).map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');}
 function tipoOpts(sel){return TIPOS.map(t=>`<option ${t===sel?'selected':''}>${t}</option>`).join('');}
 /* ---------- filtros e datas dos lançamentos ---------- */
+let CARDFORM=false;   // formulário de novo cartão aberto?
 let F={tipo:'',cat:'',valor:'',sit:''};            // aba Mês
 let FC={cartao:'',cat:'',valor:'',sit:''};         // compras no cartão
 const FAIXAS=[['','Valor'],['0-100','Até R$ 100'],['100-500','R$ 100 a R$ 500'],['500-1000','R$ 500 a R$ 1.000'],['1000-','Acima de R$ 1.000']];
@@ -472,12 +473,44 @@ function janelaEditarCompra(id){
   document.addEventListener('keydown',tecla,true);
   document.body.appendChild(w); q('ecDesc').focus();
 }
-function confirmar({titulo,texto,ok='Excluir'}){
+/* janela para editar um cartão: nome, fechamento, vencimento, limite e dinheiro separado */
+function janelaEditarCartao(id){
+  const k=CARTOES.find(z=>z.id===id); if(!k) return;
+  const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
+  w.innerHTML=`<form class="modal modal-lista modal-edit" role="dialog" aria-modal="true" aria-labelledby="ekT" novalidate>
+    <div class="sj-top"><div><h2 id="ekT">Editar cartão</h2><div class="note">${esc(k.nome)}</div></div><button type="button" class="sj-x" data-r="0" aria-label="Fechar">×</button></div>
+    <div class="ed-grid">
+      <label class="ed-full">Nome<input class="field" id="ekNome" value="${esc(k.nome)}" required></label>
+      <label>Fecha dia<input class="field" id="ekFecha" type="number" inputmode="numeric" min="1" max="31" value="${k.fecha}" required></label>
+      <label>Vence dia<input class="field" id="ekVence" type="number" inputmode="numeric" min="1" max="31" value="${k.vence}" required></label>
+      <label class="ed-full">Limite do cartão (R$)<input class="field" id="ekLim" inputmode="decimal" autocomplete="off" value="${hide()||!k.limite?'':fmtMoeda(k.limite)}" placeholder="Opcional (ex.: 5.000,00)"></label>
+      <label class="sepbox ed-full" for="ekSep"><input type="checkbox" id="ekSep" ${k.separa?'checked':''}><span><b>Separo o dinheiro na hora da compra</b><span class="note">Para cartões com cashback, pontos ou milhas. Liga a caixinha "Já separei o dinheiro desta compra" nas compras à vista deste cartão.</span></span></label>
+    </div>
+    <div class="note">Mudar o fechamento ou o vencimento vale para as próximas compras. As que já foram lançadas continuam nas faturas onde estão.</div>
+    <div class="modal-bt"><button type="button" class="btn ghost" data-r="0">Cancelar</button><button type="submit" class="btn">Salvar</button></div></form>`;
+  const fim=()=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.isConnected&&ant.focus();};
+  const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim();}};
+  const q=i=>w.querySelector('#'+i);
+  w.addEventListener('click',e=>{if(e.target.closest('[data-r]')||e.target===w)fim();});
+  w.querySelector('form').addEventListener('submit',e=>{e.preventDefault();
+    const nome=q('ekNome').value.trim(), fe=+q('ekFecha').value, ve=+q('ekVence').value, lt=q('ekLim').value.trim();
+    if(!nome){avisoCampo(q('ekNome'),'Escreva o nome do cartão (ex.: Nubank).');return;}
+    if(CARTOES.some(z=>z.id!==id&&z.nome.toLowerCase()===nome.toLowerCase())){avisoCampo(q('ekNome'),'Já existe outro cartão com esse nome.');return;}
+    if(!(fe>=1&&fe<=31&&Number.isInteger(fe))){avisoCampo(q('ekFecha'),'Escolha um dia de 1 a 31.');return;}
+    if(!(ve>=1&&ve<=31&&Number.isInteger(ve))){avisoCampo(q('ekVence'),'Escolha um dia de 1 a 31.');return;}
+    k.nome=nome; k.fecha=fe; k.vence=ve;
+    if(!(hide()&&!lt)) k.limite=lt?parseBR(lt)||null:null;
+    if(q('ekSep').checked) k.separa=true; else delete k.separa;
+    touch('cartoes'); fim(); render();});
+  document.addEventListener('keydown',tecla,true);
+  document.body.appendChild(w); q('ekNome').focus();
+}
+function confirmar({titulo,texto,ok='Excluir',unico=false}){
   return new Promise(res=>{
     const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
     w.innerHTML=`<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="mdT" aria-describedby="mdX">
       <div class="modal-ico">${ICO_LIXO}</div><h2 id="mdT">${esc(titulo)}</h2><p id="mdX">${texto}</p>
-      <div class="modal-bt"><button class="btn ghost" data-r="0">Cancelar</button><button class="btn perigo" data-r="1">${esc(ok)}</button></div></div>`;
+      <div class="modal-bt${unico?' um':''}">${unico?`<button class="btn" data-r="0">${esc(ok)}</button>`:`<button class="btn ghost" data-r="0">Cancelar</button><button class="btn perigo" data-r="1">${esc(ok)}</button>`}</div></div>`;
     const fim=v=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.focus();res(v);};
     const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim(false);}};
     w.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b)fim(b.dataset.r==='1');else if(e.target===w)fim(false);});
@@ -766,14 +799,16 @@ function viewCartoes(){
         </form></section>`:''}
       ${CARTOES.length?`<section class="card"><h2>Próximas faturas</h2><div class="tbl"><table><thead><tr><th>Mês</th>${CARTOES.map(k=>`<th class="num">${esc(k.nome)}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${prox.map(p=>`<tr><td class="mo">${MES[p.t.m]}/${String(p.t.y).slice(2)}</td>${p.vals.map(v=>`<td class="num">${v?brl0(v):'–'}</td>`).join('')}<td class="num"><b>${p.total?brl0(p.total):'–'}</b></td></tr>`).join('')}</tbody></table></div><div class="note">Só parcelas já lançadas. Compras novas entram conforme você lança.</div></section>`:''}
       <section class="card"><h2>Seus cartões</h2>
-        ${CARTOES.map(k=>`<div class="cardbox"><div class="ccrow" style="border:0"><div><b>${esc(k.nome)}</b><div class="note">Fecha dia ${k.fecha} · vence dia ${k.vence}</div></div><label class="note" for="lim-${esc(k.id)}" style="text-align:right">Limite</label><input class="cell num field" id="lim-${esc(k.id)}" data-cardlim="${esc(k.id)}" inputmode="decimal" placeholder="0,00" value="${fmtIn(k.limite)}" style="width:110px" ${hide()?'readonly':''}><button class="del" data-delcard="${esc(k.id)}" title="Remover cartão" aria-label="Remover ${esc(k.nome)}">×</button></div><label class="sepcfg"><input type="checkbox" data-cardsep="${esc(k.id)}" ${k.separa?'checked':''}> Separo o dinheiro na hora da compra</label>${k.limite?barraLimite(k):''}</div>`).join('')}
-        <form id="cardForm" class="form" style="grid-template-columns:2fr 1fr 1fr">
+        ${CARTOES.map(k=>`<div class="cardbox"><div class="ccrow cardrow" style="border:0"><div><b>${esc(k.nome)}</b><div class="note">Fecha dia ${k.fecha} · vence dia ${k.vence} · ${k.limite?'limite '+brl(k.limite):'sem limite cadastrado'}</div>${k.separa?`<div class="note sepnote">${ICO_COFRE} Separo o dinheiro na hora da compra</div>`:''}</div><div class="acoes"><button class="del edt" data-editcard="${esc(k.id)}" title="Editar cartão" aria-label="Editar ${esc(k.nome)}">${ICO_LAPIS}</button><button class="del" data-delcard="${esc(k.id)}" title="Excluir cartão" aria-label="Excluir ${esc(k.nome)}">${ICO_LIXO}</button></div></div>${k.limite?barraLimite(k):''}</div>`).join('')}
+        ${!CARDFORM&&CARTOES.length?`<button class="btn ghost addcard" type="button" data-act="abrirCard">+ Adicionar cartão</button>`:`<form id="cardForm" class="form" style="grid-template-columns:2fr 1fr 1fr">
+          <div class="note" style="grid-column:1/4;font-weight:600;color:var(--ink)">Novo cartão</div>
           <label for="kNome">Nome<input class="field" id="kNome" placeholder="Ex.: Nubank" required></label>
           <label for="kFecha">Fecha dia<input class="field" id="kFecha" type="number" min="1" max="31" placeholder="3" required></label>
           <label for="kVence">Vence dia<input class="field" id="kVence" type="number" min="1" max="31" placeholder="10" required></label>
           <label for="kLimite" style="grid-column:1/4">Limite do cartão (opcional)<input class="field" id="kLimite" inputmode="decimal" placeholder="Ex.: 5.000,00"></label>
-          <button class="btn ghost" type="submit" style="grid-column:1/4">Adicionar cartão</button>
-        </form>
+          <label class="sepbox" for="kSep" style="grid-column:1/4"><input type="checkbox" id="kSep"><span><b>Separo o dinheiro na hora da compra</b><span class="note">Para cartões com cashback, pontos ou milhas: você paga no crédito, separa o valor na hora e usa essa reserva para pagar a fatura.</span></span></label>
+          <div class="modal-bt${CARTOES.length?'':' um'}" style="grid-column:1/4;margin-top:0">${CARTOES.length?'<button class="btn ghost" type="button" data-act="fecharCard">Cancelar</button>':''}<button class="btn" type="submit">Salvar cartão</button></div>
+        </form>`}
         <div class="note" id="cardMsg"></div>
       </section>
     </aside>
@@ -937,12 +972,15 @@ V.addEventListener('click',e=>{
     const ex=Object.assign({},s.catsExtra), oc=Object.assign({},s.catsOcultas);
     if((ex[tp]||[]).includes(c)) ex[tp]=ex[tp].filter(x=>x!==c); else oc[tp]=[...(oc[tp]||[]),c];
     setSetting({catsExtra:ex,catsOcultas:oc}); render(); return;}
-  const dk=e.target.closest('[data-delcard]'); if(dk){const id=dk.dataset.delcard;let usado=false;cadaCompra(x=>{if(x.cartao===id)usado=true;});
-    if(usado){const m=document.getElementById('cardMsg');if(m)m.textContent='Este cartão tem compras lançadas. Apague as compras antes de remover o cartão.';return;}
-    CARTOES=CARTOES.filter(k=>k.id!==id);touch('cartoes');render();return;}
+  const ek=e.target.closest('[data-editcard]'); if(ek){janelaEditarCartao(ek.dataset.editcard);return;}
+  const dk=e.target.closest('[data-delcard]'); if(dk){const id=dk.dataset.delcard,k=CARTOES.find(z=>z.id===id);if(!k)return;let n=0;cadaCompra(x=>{if(x.cartao===id)n++;});
+    if(n){confirmar({titulo:'Não dá para excluir este cartão',texto:`O <b>${esc(k.nome)}</b> tem <b>${n} ${n===1?'compra lançada':'compras lançadas'}</b>. Exclua as compras primeiro e depois o cartão. Assim nenhuma fatura fica sem cartão.`,ok:'Entendi',unico:true});return;}
+    confirmar({titulo:'Excluir este cartão?',texto:`O cartão <b>${esc(k.nome)}</b> será excluído. Ele não tem compras lançadas.`,ok:'Excluir'}).then(sim=>{if(sim){CARTOES=CARTOES.filter(z=>z.id!==id);touch('cartoes');render();}});return;}
   const db=e.target.closest('[data-delbank]'); if(db){const b=S.config.bancos[+db.dataset.delbank]; S.config.bancos.splice(+db.dataset.delbank,1); delete S.config.patrimonio[b]; touch(cfgKey(ano)); render(); return;}
   const a=e.target.closest('[data-act]'); if(!a) return;
   const act=a.dataset.act;
+  if(act==='abrirCard'){CARDFORM=true;render();const n=document.getElementById('kNome');n&&n.focus();return;}
+  if(act==='fecharCard'){CARDFORM=false;render();return;}
   if(act==='importar'){document.getElementById('fileIn').click();return;}
   if(act==='exportar'){exportar();return;}
   if(act==='zero'){yr(HOJE_ANO).keep=true;touch(cfgKey(HOJE_ANO));setAno(HOJE_ANO);return;}
@@ -1053,7 +1091,7 @@ V.addEventListener('submit',e=>{
     if(!nome||!fecha||!vence) return;
     if(CARTOES.some(k=>k.nome.toLowerCase()===nome.toLowerCase())){document.getElementById('cardMsg').textContent='Já existe um cartão com esse nome.';return;}
     const limite=parseBR(document.getElementById('kLimite').value)||null;
-    CARTOES.push({id:uid(),nome,fecha,vence,limite}); touch('cartoes'); document.activeElement&&document.activeElement.blur(); render(); return;
+    CARTOES.push({id:uid(),nome,fecha,vence,limite,...(document.getElementById('kSep').checked?{separa:true}:{})}); touch('cartoes'); CARDFORM=false; document.activeElement&&document.activeElement.blur(); render(); return;
   }
   if(fm.id==='bankForm'){const n=document.getElementById('bankName').value.trim(); if(!n||S.config.bancos.includes(n)) return;
     S.config.bancos.push(n); S.config.patrimonio[n]=Array(12).fill(null); touch(cfgKey(ano)); document.activeElement.blur(); render(); return;}

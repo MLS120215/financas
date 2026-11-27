@@ -147,6 +147,10 @@ td.num{white-space:nowrap}
 .limbar .fill.ok{background:var(--good)}.limbar .fill.warn{background:var(--warn)}.limbar .fill.crit{background:var(--bad)}
 .ico-cofre{width:14px;height:14px;vertical-align:-2px;flex:none}
 .modal-edit{gap:14px}
+.modal-bt.um{grid-template-columns:1fr}
+.addcard{width:100%;padding:10px}
+.cardrow{grid-template-columns:minmax(0,1fr) auto!important}
+.cardrow .sepnote{display:flex;align-items:center;gap:4px;margin-top:2px}
 #lanc td,[id^="lanc-cc"] td{padding-top:9px;padding-bottom:9px}
 [id^="lanc-cc"] .c-desc{min-width:170px}
 [id^="lanc-cc"] .c-desc .tx-desc{display:block;overflow-wrap:anywhere}
@@ -370,6 +374,6 @@ td.num{white-space:nowrap}
 </div>
 <input type="file" id="fileIn" accept="application/json,.json" class="hidden">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
