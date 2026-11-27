@@ -390,6 +390,7 @@ function diasNoMes(y,m){return new Date(y,m+1,0).getDate();}
 function isoDe(y,m,d){return `${y}-${pad(m)}-${String(d).padStart(2,'0')}`;}
 function diaDe(x){return x&&typeof x.data==='string'&&/^\d{4}-\d\d-\d\d$/.test(x.data)?+x.data.slice(8,10):0;}
 function diaPadrao(){const h=new Date();return (ano===h.getFullYear()&&cur===h.getMonth())?h.getDate():1;}
+const ICO_REEMB='<svg class="ico-cofre" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7.5v9M14.5 9.5c-.4-.9-1.4-1.4-2.5-1.4-1.4 0-2.5.8-2.5 1.9s1 1.5 2.5 1.9 2.5.9 2.5 2-1.1 1.9-2.5 1.9c-1.2 0-2.2-.6-2.6-1.5"/></svg>';
 const ICO_LAPIS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
 const ICO_COFRE='<svg class="ico-cofre" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 8.5c-.6-1-1.5-1.8-2.6-2.3L17 3.5l-3 1.3A9 9 0 0 0 12 4.6c-4.4 0-8 2.9-8 6.6 0 2 1 3.8 2.6 5L7 20h3l.6-1.6c.5.1 1 .1 1.4.1s1 0 1.4-.1L14 20h3l.5-3.6c.9-.7 1.6-1.5 2-2.4H21v-4h-1.5c-.1-.5-.3-1-.5-1.5z"/><circle cx="15.5" cy="10" r=".6" fill="currentColor"/></svg>';
 const ICO_LIXO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
@@ -514,6 +515,30 @@ function janelaEditarCartao(id){
     touch('cartoes'); fim(); render();});
   document.addEventListener('keydown',tecla,true);
   document.body.appendChild(w); q('ekNome').focus();
+}
+/* janela com os reembolsos (compras de outras pessoas nos cartões) da fatura do mês */
+function janelaReembolsos(){
+  const y=ano, m=cur, ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
+  const montar=()=>{
+    const lista=yr(y).cc[m].compras.filter(x=>x.terceiro);
+    const tot=lista.reduce((a,x)=>a+(Number(x.valor)||0),0), rec=lista.filter(x=>x.recebido).reduce((a,x)=>a+(Number(x.valor)||0),0);
+    const gr={};lista.forEach(x=>{(gr[x.quem||'Outra pessoa']=gr[x.quem||'Outra pessoa']||[]).push(x);});
+    const grupos=Object.entries(gr).sort((a,b)=>b[1].reduce((s,x)=>s+x.valor,0)-a[1].reduce((s,x)=>s+x.valor,0));
+    w.innerHTML=`<div class="modal modal-lista" role="dialog" aria-modal="true" aria-labelledby="rbT">
+      <div class="sj-top"><div><h2 id="rbT">Reembolsos dos cartões</h2><div class="note">Fatura de ${MESL[m]}${y!==HOJE_ANO?'/'+y:''} · compras feitas para outras pessoas</div></div><button class="sj-x" data-r="0" aria-label="Fechar">×</button></div>
+      <div class="rb-lista">${grupos.map(([q,xs])=>{const st=xs.reduce((a,x)=>a+(Number(x.valor)||0),0);return `<div class="rb-grupo"><div class="rb-pessoa"><b>${esc(q)}</b><span>${brl(st)}</span></div>
+        <ul class="sj-lista">${xs.map(x=>`<li><div><b>${esc(x.desc)}${x.total>1?` ${x.parcela}/${x.total}`:''}</b><div class="note">${x.data?fmtData(x.data):'sem data'} · cartão ${esc(nomeCartao(x.cartao))}</div></div><div class="rb-dir"><span class="sj-v">${brl(x.valor)}</span><button class="paid ${x.recebido?'yes':'no'}" data-rb="${esc(x.id)}">${x.recebido?'Recebido':'A receber'}</button></div></li>`).join('')}</ul></div>`;}).join('')}</div>
+      <div class="rb-tot"><div><span>Total</span><b>${brl(tot)}</b></div><div class="pos"><span>Já recebido</span><b>${brl(rec)}</b></div><div class="${tot-rec>0.004?'rb-falta':''}"><span>A receber</span><b>${brl(tot-rec)}</b></div></div>
+      <div class="note">Toque em "A receber" quando a pessoa te pagar. O valor entra como Reembolso no mês.</div>
+      <div class="modal-bt um"><button class="btn" data-r="0">Fechar</button></div></div>`;
+  };
+  const fim=()=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.isConnected&&ant.focus();};
+  const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim();}};
+  w.addEventListener('click',e=>{
+    const b=e.target.closest('[data-rb]'); if(b){const x=yr(y).cc[m].compras.find(z=>z.id===b.dataset.rb);if(x){x.recebido=!x.recebido;touch(ccKey(y,m));render();montar();const nb=w.querySelector(`[data-rb="${b.dataset.rb}"]`);nb&&nb.focus();}return;}
+    if(e.target.closest('[data-r]')||e.target===w)fim();});
+  document.addEventListener('keydown',tecla,true);
+  montar(); document.body.appendChild(w); w.querySelector('.sj-x').focus();
 }
 function confirmar({titulo,texto,ok='Excluir',unico=false}){
   return new Promise(res=>{
@@ -676,7 +701,10 @@ function blocoFaturasMes(){
   const terc=(!F.tipo||F.tipo==='entradas'||F.tipo==='Reembolso')&&!F.cat?terc0.filter(x=>naFaixa(x.valor,F.valor)&&sitOk(F.sit,!!x.recebido)):[];
   const manual=S.months[cur].some(x=>x.tipo==='Despesa'&&x.cat==='Cartão de crédito');
   const linhasF=fs.map(f=>`<div class="ccrow"><div><b>Fatura ${esc(nomeCartao(f.id))}</b><div class="note">${f.n} ${f.n===1?'compra':'compras'} · Despesa · categorias de cada compra</div>${f.sep?`<button type="button" class="seplink" data-sepver="${esc(f.id)}" aria-haspopup="dialog">${ICO_COFRE} <span>${brl(f.sep)} já separados antes${f.total-f.sep>0.004?` · só ${brl(f.total-f.sep)} pesa neste mês`:' · não pesa neste mês'}</span></button>`:''}</div><div class="ccv">${brl(f.total)}</div><button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(f.id)}">${f.pago?'Pago':'A pagar'}</button><button class="chip" data-goto="cartoes">Ver compras</button></div>`).join('');
-  const linhasT=terc.map(x=>`<div class="ccrow"><div><b>Reembolso – ${esc(x.quem||'outra pessoa')}</b><div class="note">${esc(x.desc)}${x.total>1?` ${x.parcela}/${x.total}`:''} · no cartão ${esc(nomeCartao(x.cartao))}</div></div><div class="ccv">${brl(x.valor)}</div><button class="paid ${x.recebido?'yes':'no'}" data-act="tercrec" data-id="${esc(x.id)}">${x.recebido?'Recebido':'A receber'}</button><span></span></div>`).join('');
+  const linhasT=terc.length?(()=>{const tot=terc.reduce((a,x)=>a+(Number(x.valor)||0),0), rec=terc.filter(x=>x.recebido).reduce((a,x)=>a+(Number(x.valor)||0),0), falta=tot-rec;
+    const pp={};terc.forEach(x=>{const q=x.quem||'Outra pessoa';pp[q]=(pp[q]||0)+(Number(x.valor)||0);});
+    const nf=terc.filter(x=>!x.recebido).length;
+    return `<div class="ccrow"><div><b>Reembolsos dos cartões</b><div class="note">${Object.entries(pp).sort((a,b)=>b[1]-a[1]).map(([q,v])=>`${esc(q)} ${brl(v)}`).join(' · ')}</div><button type="button" class="seplink rblink" data-reemb="1" aria-haspopup="dialog">${ICO_REEMB} <span>${terc.length} ${terc.length===1?'compra':'compras'} de outras pessoas · ${falta>0.004?`${brl(falta)} a receber`:'tudo recebido'}</span></button></div><div class="ccv">${brl(tot)}</div><span class="pill ${nf?'part':'ok'} sep-pill">${nf?`${nf} a receber`:'Recebido'}</span><button class="chip" data-reemb="1">Ver</button></div>`;})():'';
   const linhasS=seps.map(g=>`<div class="ccrow"><div><b>Separado para a fatura ${esc(nomeCartao(g.id))} – ${MESL[g.fm]}${g.fy!==ano?'/'+g.fy:''}</b><button type="button" class="seplink" data-sepmes="${esc(g.id)}|${g.fy}|${g.fm}" aria-haspopup="dialog">${ICO_COFRE} <span>${g.n} ${g.n===1?'compra separada':'compras separadas'} neste mês · já ${g.n===1?'conta':'contam'} nas categorias deste mês</span></button></div><div class="ccv">${brl(g.total)}</div><span class="pill ok sep-pill">${ICO_COFRE} Separado</span><button class="chip" data-gofat="${g.fy}-${g.fm}">Ver compras</button></div>`).join('');
   if(!linhasF&&!linhasT&&!linhasS) return '';
   return `<div class="ccbox"><div class="note" style="font-weight:600;color:var(--ink)">Dos cartões (automático)</div>${linhasS}${linhasF}${linhasT}
@@ -973,6 +1001,7 @@ V.addEventListener('click',e=>{
   const fse=e.target.closest('[data-fset]'); if(fse){const o=fse.dataset.fset==='mes'?F:FC;o[fse.dataset.k]=fse.dataset.v;FP=null;FSTEP=null;render();return;}
   const fxx=e.target.closest('[data-fx]'); if(fxx){const o=fxx.dataset.fx==='mes'?F:FC;o[fxx.dataset.k]='';render();return;}
   const gb=e.target.closest('[data-graf]'); if(gb){lsSet('grafCat',gb.dataset.graf);render();return;}
+  const rb=e.target.closest('[data-reemb]'); if(rb){janelaReembolsos();return;}
   const sv=e.target.closest('[data-sepver]'); if(sv){janelaSeparadas(sv.dataset.sepver);return;}
   const sm=e.target.closest('[data-sepmes]'); if(sm){const [cid,fy,fm]=sm.dataset.sepmes.split('|');janelaSeparadas(cid,+fy,+fm,true);return;}
   const gf=e.target.closest('[data-gofat]'); if(gf){const [fy,fm]=gf.dataset.gofat.split('-').map(Number);ano=fy;S=yr(fy);cur=fm;tab='cartoes';render();return;}

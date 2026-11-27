@@ -148,6 +148,15 @@ td.num{white-space:nowrap}
 .ico-cofre{width:14px;height:14px;vertical-align:-2px;flex:none}
 .modal-edit{gap:14px}
 .modal-bt.um{grid-template-columns:1fr}
+.rblink{color:var(--accent)}
+.rb-lista{overflow:auto;display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--line);padding-top:10px}
+.rb-pessoa{display:flex;justify-content:space-between;gap:8px;font-size:14px;font-variant-numeric:tabular-nums}
+.rb-grupo .sj-lista{border-top:0;margin:0}
+.rb-dir{display:flex;align-items:center;gap:10px}
+.rb-tot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.rb-tot div{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted)}
+.rb-tot b{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+.rb-tot .pos b{color:var(--good)}.rb-tot .rb-falta b{color:var(--warn)}
 .addcard{width:100%;padding:10px}
 .cardrow{grid-template-columns:minmax(0,1fr) auto!important}
 .cardrow .sepnote{display:flex;align-items:center;gap:4px;margin-top:2px}
@@ -374,6 +383,6 @@ td.num{white-space:nowrap}
 </div>
 <input type="file" id="fileIn" accept="application/json,.json" class="hidden">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
