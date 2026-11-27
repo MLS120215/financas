@@ -97,7 +97,10 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const uid=()=>(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)).replace(/-/g,'').slice(0,12);
 
 /* lançamentos do mês + itens gerados pelas faturas dos cartões (cada compra conta uma vez, na sua categoria) */
-function ccItems(m,Yy){const c=(Yy||S).cc[m];const out=[];c.compras.forEach(x=>{out.push({tipo:'Despesa',cat:x.cat,valor:x.valor,pago:!!(c.faturas[x.cartao]||{}).pago,_cc:1});if(x.terceiro)out.push({tipo:'Reembolso',cat:'Reembolso',valor:x.valor,pago:!!x.recebido,_cc:1});});return out;}
+/* "Já separei o dinheiro": a compra conta como despesa no mês em que foi feita (o dinheiro já saiu), e não pesa no mês da fatura */
+function anoDe(Yy){for(const k in Y)if(Y[k]===Yy)return +k;return ano;}
+function separadasNoMes(y,m){const pre=`${y}-${pad(m)}`,out=[];cadaCompra((x,yy,mm)=>{if(x.sep&&x.data&&x.data.slice(0,7)===pre)out.push({...x,_fy:yy,_fm:mm});});return out;}
+function ccItems(m,Yy){Yy=Yy||S;const c=Yy.cc[m];const out=[];separadasNoMes(anoDe(Yy),m).forEach(x=>out.push({tipo:'Despesa',cat:x.cat,valor:x.valor,pago:true,_cc:1,_sep:1}));c.compras.forEach(x=>{if(!x.sep)out.push({tipo:'Despesa',cat:x.cat,valor:x.valor,pago:!!(c.faturas[x.cartao]||{}).pago,_cc:1});if(x.terceiro)out.push({tipo:'Reembolso',cat:'Reembolso',valor:x.valor,pago:!!x.recebido,_cc:1});});return out;}
 function allItems(m,Yy){return (Yy||S).months[m].concat(ccItems(m,Yy));}
 function sum(m,fn,Yy){return allItems(m,Yy).reduce((a,x)=>a+(fn(x)?Number(x.valor)||0:0),0);}
 function calc(m,Yy){
@@ -380,14 +383,95 @@ const FAIXAS=[['','Valor'],['0-100','Até R$ 100'],['100-500','R$ 100 a R$ 500']
 function naFaixa(v,f){if(!f)return true;const [a,b]=f.split('-');v=Math.abs(Number(v)||0);return v>=(+a||0)&&(b===''||v<=+b);}
 function tipoOk(f,tipo){return !f||(f==='entradas'?(ENTRADA.has(tipo)||tipo==='Vale (benefício)'):tipo===f);}
 function sitOk(f,pago){return !f||(f==='pago'?pago:!pago);}
-function compraSitOk(f,x){return !f||(f==='avista'?x.total<=1:f==='parcelada'?x.total>1:f==='terceiro'?!!x.terceiro:true);}
+function compraSitOk(f,x){return !f||(f==='separada'?!!x.sep:f==='avista'?x.total<=1:f==='parcelada'?x.total>1:f==='terceiro'?!!x.terceiro:true);}
 function filtrosAtivos(o){return Object.values(o).some(Boolean);}
 function diasNoMes(y,m){return new Date(y,m+1,0).getDate();}
 function isoDe(y,m,d){return `${y}-${pad(m)}-${String(d).padStart(2,'0')}`;}
 function diaDe(x){return x&&typeof x.data==='string'&&/^\d{4}-\d\d-\d\d$/.test(x.data)?+x.data.slice(8,10):0;}
 function diaPadrao(){const h=new Date();return (ano===h.getFullYear()&&cur===h.getMonth())?h.getDate():1;}
+const ICO_LAPIS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
+const ICO_COFRE='<svg class="ico-cofre" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 8.5c-.6-1-1.5-1.8-2.6-2.3L17 3.5l-3 1.3A9 9 0 0 0 12 4.6c-4.4 0-8 2.9-8 6.6 0 2 1 3.8 2.6 5L7 20h3l.6-1.6c.5.1 1 .1 1.4.1s1 0 1.4-.1L14 20h3l.5-3.6c.9-.7 1.6-1.5 2-2.4H21v-4h-1.5c-.1-.5-.3-1-.5-1.5z"/><circle cx="15.5" cy="10" r=".6" fill="currentColor"/></svg>';
 const ICO_LIXO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></svg>';
 /* janela de confirmação do próprio app (o confirm() do navegador é feio e não funciona em todo lugar) */
+/* janela com as compras da fatura que já tiveram o dinheiro separado */
+function janelaSeparadas(cardId,fy,fm,doMes){
+  if(fy==null){fy=ano;fm=cur;}
+  const base=doMes?separadasNoMes(ano,cur).filter(x=>x.cartao===cardId&&x._fy===fy&&x._fm===fm):yr(fy).cc[fm].compras.filter(x=>x.cartao===cardId&&x.sep);
+  const lista=base.slice().sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const tot=lista.reduce((a,x)=>a+(Number(x.valor)||0),0);
+  const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
+  w.innerHTML=`<div class="modal modal-lista" role="dialog" aria-modal="true" aria-labelledby="sjT">
+    <div class="sj-top"><div><h2 id="sjT">Compras com dinheiro separado</h2><div class="note">${doMes?`Feitas em ${MESL[cur].toLowerCase()} · `:''}Fatura ${esc(nomeCartao(cardId))} – ${MESL[fm]}${fy!==ano?'/'+fy:''}</div></div><button class="sj-x" data-r="0" aria-label="Fechar">×</button></div>
+    <ul class="sj-lista">${lista.map(x=>{const d=x.data?{m:+x.data.slice(5,7)-1}:null;return `<li><div><b>${esc(x.desc)}</b><div class="note">${x.data?fmtData(x.data):'sem data'} · ${esc(x.cat)}${d&&!doMes?` · separado em ${MESL[d.m].toLowerCase()}`:''}</div></div><span class="sj-v">${brl(x.valor)}</span></li>`;}).join('')}</ul>
+    <div class="sj-tot"><span>Total separado (${lista.length} ${lista.length===1?'compra':'compras'})</span><b>${brl(tot)}</b></div>
+    <div class="modal-bt"><button class="btn ghost" data-r="0">Fechar</button><button class="btn" data-r="1">Ver na aba Cartões</button></div></div>`;
+  const fim=v=>{document.removeEventListener('keydown',tecla,true);w.remove();if(v){if(fy!==ano){ano=fy;S=yr(fy);}cur=fm;tab='cartoes';render();}else ant&&ant.focus&&ant.focus();};
+  const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim(false);}};
+  w.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(b)fim(b.dataset.r==='1');else if(e.target===w)fim(false);});
+  document.addEventListener('keydown',tecla,true);
+  document.body.appendChild(w); w.querySelector('.sj-x').focus();
+}
+/* janela para editar um lançamento do mês (data, descrição, tipo, categoria, valor e situação) */
+function janelaEditar(i){
+  const y=ano, m=cur, it=yr(y).months[m][i]; if(!it) return;
+  const l=limMes(), dd=diaDe(it)?it.data:'';
+  const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
+  w.innerHTML=`<form class="modal modal-lista modal-edit" role="dialog" aria-modal="true" aria-labelledby="edT" novalidate>
+    <div class="sj-top"><div><h2 id="edT">Editar lançamento</h2><div class="note">${MESL[m]} de ${y}</div></div><button type="button" class="sj-x" data-r="0" aria-label="Fechar">×</button></div>
+    <div class="ed-grid">
+      <label class="ed-full">Descrição<input class="field" id="eDesc" value="${esc(it.desc)}" required></label>
+      <label>Data<input class="field" type="date" id="eData" value="${dd}" min="${l.min}" max="${l.max}"></label>
+      <label>Valor (R$)<input class="field" id="eVal" inputmode="decimal" autocomplete="off" value="${hide()?'':fmtMoeda(it.valor)}" placeholder="0,00" required></label>
+      <label>Tipo<select class="field" id="eTipo">${tipoOpts(it.tipo)}</select></label>
+      <label>Categoria<select class="field" id="eCat">${catOpts(it.tipo,it.cat)}</select></label>
+      <label class="ed-full ed-chk"><input type="checkbox" id="ePago" ${it.pago?'checked':''}> <span id="ePagoT">${ENTRADA.has(it.tipo)?'Já recebido':'Já pago'}</span></label>
+    </div>
+    <div class="modal-bt"><button type="button" class="btn ghost" data-r="0">Cancelar</button><button type="submit" class="btn">Salvar</button></div></form>`;
+  const fim=()=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.isConnected&&ant.focus();};
+  const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim();}};
+  const q=id=>w.querySelector('#'+id);
+  q('eTipo').addEventListener('change',()=>{const t=q('eTipo').value,c=q('eCat').value;q('eCat').innerHTML=catOpts(t,cats(t).includes(c)?c:(cats(t)[0]||'Outros'));q('ePagoT').textContent=ENTRADA.has(t)?'Já recebido':'Já pago';});
+  w.addEventListener('click',e=>{if(e.target.closest('[data-r]')||e.target===w)fim();});
+  w.querySelector('form').addEventListener('submit',e=>{e.preventDefault();
+    const d=q('eDesc').value.trim(), v=hide()&&!q('eVal').value?it.valor:parseBR(q('eVal').value), dt=q('eData').value;
+    if(!d){avisoCampo(q('eDesc'),'Escreva uma descrição (ex.: Mercado).');return;}
+    if(!(v>0)){avisoCampo(q('eVal'),'Digite um valor maior que zero, só com números (ex.: 18,50).');return;}
+    if(dt&&dt.slice(0,7)!==`${y}-${pad(m)}`){avisoCampo(q('eData'),`Escolha um dia de ${MESL[m]}.`);return;}
+    it.desc=d; it.valor=v; it.tipo=q('eTipo').value; it.cat=q('eCat').value; it.pago=q('ePago').checked; if(dt) it.data=dt; else delete it.data;
+    touch(monthKey(y,m)); fim(); render();});
+  document.addEventListener('keydown',tecla,true);
+  document.body.appendChild(w); q('eDesc').focus();
+}
+/* janela para editar uma compra do cartão (descrição, categoria, valor e dinheiro separado) */
+function janelaEditarCompra(id){
+  const y=ano, m=cur, x=yr(y).cc[m].compras.find(z=>z.id===id); if(!x) return;
+  const k=CARTOES.find(z=>z.id===x.cartao)||{}, parc=x.total>1, podeSep=k.separa&&!parc;
+  const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
+  w.innerHTML=`<form class="modal modal-lista modal-edit" role="dialog" aria-modal="true" aria-labelledby="ecT" novalidate>
+    <div class="sj-top"><div><h2 id="ecT">Editar compra</h2><div class="note">${esc(k.nome||'Cartão')} · ${x.data?fmtData(x.data):'sem data'}${parc?` · parcela ${x.parcela} de ${x.total}`:''}</div></div><button type="button" class="sj-x" data-r="0" aria-label="Fechar">×</button></div>
+    <div class="ed-grid">
+      <label class="ed-full">Descrição<input class="field" id="ecDesc" value="${esc(x.desc)}" required></label>
+      <label>Categoria<select class="field" id="ecCat">${catOpts('Despesa',x.cat)}</select></label>
+      <label>Valor${parc?' da parcela':''} (R$)<input class="field" id="ecVal" inputmode="decimal" autocomplete="off" value="${hide()?'':fmtMoeda(x.valor)}" placeholder="0,00" required></label>
+      ${podeSep?`<label class="ed-full ed-chk"><input type="checkbox" id="ecSep" ${x.sep?'checked':''}> Já separei o dinheiro desta compra</label>`:''}
+    </div>
+    <div class="note">${parc?'A descrição e a categoria mudam em todas as parcelas; o valor muda só nesta parcela. ':''}Para mudar a data ou o cartão, exclua a compra e lance de novo.</div>
+    <div class="modal-bt"><button type="button" class="btn ghost" data-r="0">Cancelar</button><button type="submit" class="btn">Salvar</button></div></form>`;
+  const fim=()=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.isConnected&&ant.focus();};
+  const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim();}};
+  const q=i=>w.querySelector('#'+i);
+  w.addEventListener('click',e=>{if(e.target.closest('[data-r]')||e.target===w)fim();});
+  w.querySelector('form').addEventListener('submit',e=>{e.preventDefault();
+    const d=q('ecDesc').value.trim(), v=hide()&&!q('ecVal').value?x.valor:parseBR(q('ecVal').value), c=q('ecCat').value;
+    if(!d){avisoCampo(q('ecDesc'),'Escreva uma descrição (ex.: Mercado).');return;}
+    if(!(v>0)){avisoCampo(q('ecVal'),'Digite um valor maior que zero, só com números (ex.: 18,50).');return;}
+    const keys=new Set([ccKey(y,m)]);
+    cadaCompra((z,yy,mm)=>{if(z.grupo===x.grupo&&(z.desc!==d||z.cat!==c)){z.desc=d;z.cat=c;keys.add(ccKey(yy,mm));}});
+    x.valor=v; if(podeSep){if(q('ecSep').checked)x.sep=true;else delete x.sep;}
+    keys.forEach(touch); fim(); render();});
+  document.addEventListener('keydown',tecla,true);
+  document.body.appendChild(w); q('ecDesc').focus();
+}
 function confirmar({titulo,texto,ok='Excluir'}){
   return new Promise(res=>{
     const ant=document.activeElement, w=document.createElement('div'); w.className='modal-fundo';
@@ -450,13 +534,13 @@ function barraFiltrosMes(todos,nVis){
 function barraFiltrosCC(compras){
   const cK=contar(compras,x=>x.cartao), cC=contar(compras,x=>x.cat);
   const cV=new Map(FAIXAS.slice(1).map(([f])=>[f,compras.filter(x=>naFaixa(x.valor,f)).length]));
-  const cS=new Map(['avista','parcelada','terceiro'].map(k=>[k,compras.filter(x=>compraSitOk(k,x)).length]));
+  const cS=new Map(['avista','parcelada','terceiro','separada'].map(k=>[k,compras.filter(x=>compraSitOk(k,x)).length]));
   const cats=[...new Set(compras.map(x=>x.cat).filter(Boolean).concat(FC.cat?[FC.cat]:[]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const grupos=[];
   if(CARTOES.length>1) grupos.push({k:'cartao',t:'Cartão',todos:'Todos os cartões',opts:CARTOES.map(k=>[k.id,k.nome,cK.get(k.id)])});
   grupos.push({k:'cat',t:'Categoria',todos:'Todas as categorias',opts:cats.map(c=>[c,c,cC.get(c)])},
     {k:'valor',t:'Valor',todos:'Qualquer valor',opts:FAIXAS.slice(1).map(([f,l])=>[f,l,cV.get(f)])},
-    {k:'sit',t:'Situação',todos:'Todas as compras',opts:[['avista','À vista',cS.get('avista')],['parcelada','Parceladas',cS.get('parcelada')],['terceiro','De outra pessoa',cS.get('terceiro')]]});
+    {k:'sit',t:'Situação',todos:'Todas as compras',opts:[['avista','À vista',cS.get('avista')],['parcelada','Parceladas',cS.get('parcelada')],['terceiro','De outra pessoa',cS.get('terceiro')]].concat(CARTOES.some(k=>k.separa)?[['separada','Com dinheiro separado',cS.get('separada')]]:[])});
   const nVis=compras.filter(x=>(!FC.cartao||x.cartao===FC.cartao)&&(!FC.cat||x.cat===FC.cat)&&naFaixa(x.valor,FC.valor)&&compraSitOk(FC.sit,x)).length;
   return `<section class="card fcard">${barraCaminho('cc',grupos,FC,nVis,compras.length,'compras')}</section>`;
 }
@@ -473,14 +557,13 @@ function viewMes(){
   const ct={}; allItems(cur).forEach(x=>{if(x.tipo==='Despesa')ct[x.cat]=(ct[x.cat]||0)+(Number(x.valor)||0);});
   const cl=Object.entries(ct).sort((a,b)=>b[1]-a[1]); const mx=cl.length?cl[0][1]:1;
   const prevHas=prevMonth().length, prevLbl=cur>0?MESL[cur-1]:'Dezembro de '+(ano-1);
-  const rows=items.map(x=>`<tr data-i="${x._i}">
-      <td style="min-width:84px">${campoData(x)}</td>
-      <td style="min-width:200px"><input class="cell" data-f="desc" value="${esc(x.desc)}" aria-label="Descrição">${x.obs?`<div class="note" style="padding:0 6px 3px">${esc(x.obs)}</div>`:''}</td>
-      <td style="min-width:150px"><select class="cell" data-f="tipo" aria-label="Tipo">${tipoOpts(x.tipo)}</select></td>
-      <td style="min-width:150px"><select class="cell" data-f="cat" aria-label="Categoria">${catOpts(x.tipo,x.cat)}</select></td>
-      <td style="min-width:110px"><input class="cell num" data-f="valor" inputmode="decimal" value="${fmtIn(x.valor)}" aria-label="Valor" ${hide()?'readonly':''}></td>
+  const rows=items.map(x=>{const dd=diaDe(x)?x.data:'';return `<tr data-i="${x._i}">
+      <td class="c-data">${dd?`${dd.slice(8,10)}/${dd.slice(5,7)}`:'<span class="note">Sem data</span>'}</td>
+      <td class="c-desc"><span class="tx-desc">${esc(x.desc)}</span>${x.obs?`<div class="note">${esc(x.obs)}</div>`:''}</td>
+      <td class="c-cat"><span class="c-tipo">${esc(x.tipo)}</span><span class="c-cn">${esc(x.cat)}</span></td>
+      <td class="num c-val">${brl(x.valor).replace('R$ ','')}</td>
       <td><button class="paid ${x.pago?'yes':'no'}" data-act="pago">${x.pago?(ENTRADA.has(x.tipo)?'Recebido':'Pago'):(ENTRADA.has(x.tipo)?'A receber':'A pagar')}</button></td>
-      <td><button class="del" data-act="del" title="Excluir lançamento" aria-label="Excluir lançamento ${esc(x.desc)}">${ICO_LIXO}</button></td></tr>`).join('');
+      <td><div class="acoes"><button class="del edt" data-act="edit" title="Editar lançamento" aria-label="Editar lançamento ${esc(x.desc)}">${ICO_LAPIS}</button><button class="del" data-act="del" title="Excluir lançamento" aria-label="Excluir lançamento ${esc(x.desc)}">${ICO_LIXO}</button></div></td></tr>`;}).join('');
   return `<div style="display:flex;flex-direction:column;gap:16px">
   <div class="kpis">
     <div class="kpi"><span class="l">Renda</span><span class="v">${brl(c.renda)}</span><span class="s">+ ${brl0(c.reemb)} de reembolsos</span></div>
@@ -502,8 +585,8 @@ function viewMes(){
         <button class="btn" type="submit">Adicionar</button>
       </form>
       ${todos.length?barraFiltrosMes(todos,items.length):''}
-      <div class="tbl" id="lanc"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead>
-      <tbody>${rows||(fAtivo&&todos.length?`<tr><td colspan="7" class="note" style="padding:16px 6px">Nenhum lançamento com esses filtros.</td></tr>`:S.cc[cur].compras.length?'':`<tr><td colspan="7" class="note" style="padding:16px 6px">Nenhum lançamento em ${MESL[cur]} ainda.${prevHas?' Use "Copiar fixos" ao lado para trazer as contas do mês anterior.':''}</td></tr>`)}</tbody></table></div>
+      <div class="tbl" id="lanc"><table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo · Categoria</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${rows||(fAtivo&&todos.length?`<tr><td colspan="6" class="note" style="padding:16px 6px">Nenhum lançamento com esses filtros.</td></tr>`:S.cc[cur].compras.length?'':`<tr><td colspan="6" class="note" style="padding:16px 6px">Nenhum lançamento em ${MESL[cur]} ainda.${prevHas?' Use "Copiar fixos" ao lado para trazer as contas do mês anterior.':''}</td></tr>`)}</tbody></table></div>
       ${blocoFaturasMes()}
     </section>
     <aside style="display:flex;flex-direction:column;gap:16px">
@@ -540,17 +623,20 @@ function rosca(cl){
     <ul class="rosca-leg">${leg}</ul></div>`;
 }
 function nomeCartao(id){const c=CARTOES.find(x=>x.id===id);return c?c.nome:'Cartão removido';}
-function faturasDoMes(Yy,m){const c=Yy.cc[m];const g={};c.compras.forEach(x=>{(g[x.cartao]=g[x.cartao]||{id:x.cartao,total:0,n:0});g[x.cartao].total+=Number(x.valor)||0;g[x.cartao].n++;});return Object.values(g).map(f=>({...f,pago:!!(c.faturas[f.id]||{}).pago,banco:(c.faturas[f.id]||{}).banco}));}
+function faturasDoMes(Yy,m){const c=Yy.cc[m];const g={};c.compras.forEach(x=>{(g[x.cartao]=g[x.cartao]||{id:x.cartao,total:0,n:0,sep:0});g[x.cartao].total+=Number(x.valor)||0;if(x.sep)g[x.cartao].sep+=Number(x.valor)||0;g[x.cartao].n++;});return Object.values(g).map(f=>({...f,pago:!!(c.faturas[f.id]||{}).pago,banco:(c.faturas[f.id]||{}).banco}));}
 function blocoFaturasMes(){
-  const fs0=faturasDoMes(S,cur), terc0=S.cc[cur].compras.filter(x=>x.terceiro);
-  if(!fs0.length) return '';
+  const fs0=faturasDoMes(S,cur), terc0=S.cc[cur].compras.filter(x=>x.terceiro), sep0=separadasNoMes(ano,cur);
+  if(!fs0.length&&!sep0.length) return '';
+  const gs={};sep0.forEach(x=>{const k=x.cartao+'|'+x._fy+'|'+x._fm;(gs[k]=gs[k]||{id:x.cartao,fy:x._fy,fm:x._fm,total:0,n:0});gs[k].total+=Number(x.valor)||0;gs[k].n++;});
+  const seps=(!F.tipo||F.tipo==='Despesa')&&!F.cat&&sitOk(F.sit,true)?Object.values(gs).filter(g=>naFaixa(g.total,F.valor)):[];
   const fs=(!F.tipo||F.tipo==='Despesa')&&!F.cat?fs0.filter(f=>naFaixa(f.total,F.valor)&&sitOk(F.sit,f.pago)):[];
   const terc=(!F.tipo||F.tipo==='entradas'||F.tipo==='Reembolso')&&!F.cat?terc0.filter(x=>naFaixa(x.valor,F.valor)&&sitOk(F.sit,!!x.recebido)):[];
   const manual=S.months[cur].some(x=>x.tipo==='Despesa'&&x.cat==='Cartão de crédito');
-  const linhasF=fs.map(f=>`<div class="ccrow"><div><b>Fatura ${esc(nomeCartao(f.id))}</b><div class="note">${f.n} ${f.n===1?'compra':'compras'} · Despesa · categorias de cada compra</div></div><div class="ccv">${brl(f.total)}</div><button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(f.id)}">${f.pago?'Pago':'A pagar'}</button><button class="chip" data-goto="cartoes">Ver compras</button></div>`).join('');
+  const linhasF=fs.map(f=>`<div class="ccrow"><div><b>Fatura ${esc(nomeCartao(f.id))}</b><div class="note">${f.n} ${f.n===1?'compra':'compras'} · Despesa · categorias de cada compra</div>${f.sep?`<button type="button" class="seplink" data-sepver="${esc(f.id)}" aria-haspopup="dialog">${ICO_COFRE} <span>${brl(f.sep)} já separados antes${f.total-f.sep>0.004?` · só ${brl(f.total-f.sep)} pesa neste mês`:' · não pesa neste mês'}</span></button>`:''}</div><div class="ccv">${brl(f.total)}</div><button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(f.id)}">${f.pago?'Pago':'A pagar'}</button><button class="chip" data-goto="cartoes">Ver compras</button></div>`).join('');
   const linhasT=terc.map(x=>`<div class="ccrow"><div><b>Reembolso – ${esc(x.quem||'outra pessoa')}</b><div class="note">${esc(x.desc)}${x.total>1?` ${x.parcela}/${x.total}`:''} · no cartão ${esc(nomeCartao(x.cartao))}</div></div><div class="ccv">${brl(x.valor)}</div><button class="paid ${x.recebido?'yes':'no'}" data-act="tercrec" data-id="${esc(x.id)}">${x.recebido?'Recebido':'A receber'}</button><span></span></div>`).join('');
-  if(!linhasF&&!linhasT) return '';
-  return `<div class="ccbox"><div class="note" style="font-weight:600;color:var(--ink)">Dos cartões (automático)</div>${linhasF}${linhasT}
+  const linhasS=seps.map(g=>`<div class="ccrow"><div><b>Separado para a fatura ${esc(nomeCartao(g.id))} – ${MESL[g.fm]}${g.fy!==ano?'/'+g.fy:''}</b><button type="button" class="seplink" data-sepmes="${esc(g.id)}|${g.fy}|${g.fm}" aria-haspopup="dialog">${ICO_COFRE} <span>${g.n} ${g.n===1?'compra separada':'compras separadas'} neste mês · já ${g.n===1?'conta':'contam'} nas categorias deste mês</span></button></div><div class="ccv">${brl(g.total)}</div><span class="pill ok sep-pill">${ICO_COFRE} Separado</span><button class="chip" data-gofat="${g.fy}-${g.fm}">Ver compras</button></div>`).join('');
+  if(!linhasF&&!linhasT&&!linhasS) return '';
+  return `<div class="ccbox"><div class="note" style="font-weight:600;color:var(--ink)">Dos cartões (automático)</div>${linhasS}${linhasF}${linhasT}
     ${manual?'<div class="banner" style="margin-top:8px">Este mês também tem uma fatura lançada à mão na categoria "Cartão de crédito". Se ela é a mesma fatura da aba Cartões, apague a linha manual para não contar duas vezes.</div>':''}</div>`;
 }
 function viewBoasVindas(){
@@ -606,10 +692,10 @@ function norm(y,m){return {y:y+Math.floor(m/12),m:((m%12)+12)%12};}
 /* Em qual fatura (mês de vencimento) cai uma compra: compra no dia do fechamento ou depois vai para a próxima */
 function faturaDe(card,iso){const y=+iso.slice(0,4),m=+iso.slice(5,7)-1,d=+iso.slice(8,10);const fecha=m+(d>=card.fecha?1:0);return norm(y,card.vence>card.fecha?fecha:fecha+1);}
 function parcelas(total,n){const cents=Math.round(total*100),base=Math.floor(cents/n),resto=cents-base*n;return Array.from({length:n},(_,i)=>(base+(i<resto?1:0))/100);}
-function addCompra({cartao,data,desc,cat,valor,n,terceiro,quem}){
+function addCompra({cartao,data,desc,cat,valor,n,terceiro,quem,sep}){
   const card=CARTOES.find(c=>c.id===cartao); if(!card) return null;
   const f=faturaDe(card,data), grupo=uid(), vals=parcelas(valor,n), keys=new Set();
-  vals.forEach((v,i)=>{const t=norm(f.y,f.m+i);yr(t.y).cc[t.m].compras.push({id:uid(),grupo,cartao,data,desc,cat,valor:v,parcela:i+1,total:n,terceiro:!!terceiro,quem:terceiro?quem:'',recebido:false});keys.add(ccKey(t.y,t.m));});
+  vals.forEach((v,i)=>{const t=norm(f.y,f.m+i);yr(t.y).cc[t.m].compras.push({id:uid(),grupo,cartao,data,desc,cat,valor:v,parcela:i+1,total:n,terceiro:!!terceiro,quem:terceiro?quem:'',recebido:false,...(sep&&n===1?{sep:true}:{})});keys.add(ccKey(t.y,t.m));});
   keys.forEach(touch); return f;
 }
 function cadaCompra(fn){for(const y in Y){Y[y].cc.forEach((c,m)=>c.compras.forEach(x=>fn(x,+y,m,c)));}}
@@ -637,13 +723,16 @@ function viewCartoes(){
     const fat=c.faturas[k.id]||{}, banco=fat.banco, dif=banco!=null&&banco!==''?Math.round((Number(banco)-f.total)*100)/100:null;
     const venc=`${String(k.vence).padStart(2,'0')}/${pad(cur)}`;
     const rows=lista.map(x=>`<tr data-cc="${esc(x.id)}">
-      <td style="min-width:180px"><input class="cell" data-ccf="desc" value="${esc(x.desc)}" aria-label="Descrição"><div class="note" style="padding:0 6px 3px">${[x.data?fmtData(x.data):'',x.total>1?`Parcela ${x.parcela} de ${x.total}`:'',x.terceiro?`de ${esc(x.quem||'outra pessoa')} (vira reembolso)`:''].filter(Boolean).join(' · ')}</div></td>
-      <td style="min-width:140px"><select class="cell" data-ccf="cat" aria-label="Categoria">${catOpts('Despesa',x.cat)}</select></td>
-      <td style="min-width:100px"><input class="cell num" data-ccf="valor" inputmode="decimal" value="${fmtIn(x.valor)}" aria-label="Valor" ${hide()?'readonly':''}></td>
-      <td><button class="del" data-act="delcc" title="${x.total>1?'Excluir a compra e todas as parcelas':'Excluir compra'}" aria-label="Excluir compra ${esc(x.desc)}">${ICO_LIXO}</button></td></tr>`).join('');
+      <td class="c-desc"><span class="tx-desc">${esc(x.desc)}</span><div class="note">${[x.data?fmtData(x.data):'',x.total>1?`Parcela ${x.parcela} de ${x.total}`:'',x.terceiro?`de ${esc(x.quem||'outra pessoa')} (vira reembolso)`:''].filter(Boolean).join(' · ')}${k.separa&&x.total===1?` <button type="button" class="septog ${x.sep?'on':''}" data-act="sepcc" aria-pressed="${x.sep?'true':'false'}" title="${x.sep?'Clique se ainda não separou o dinheiro':'Clique se já separou o dinheiro desta compra'}">${ICO_COFRE} ${x.sep?'Separado':'Não separado'}</button>`:x.sep?` <span class="septog on">${ICO_COFRE} Separado</span>`:''}</div></td>
+      <td class="c-cat"><span class="c-cn">${esc(x.cat)}</span></td>
+      <td class="num c-val">${brl(x.valor).replace('R$ ','')}</td>
+      <td><div class="acoes"><button class="del edt" data-act="editcc" title="Editar compra" aria-label="Editar compra ${esc(x.desc)}">${ICO_LAPIS}</button><button class="del" data-act="delcc" title="${x.total>1?'Excluir a compra e todas as parcelas':'Excluir compra'}" aria-label="Excluir compra ${esc(x.desc)}">${ICO_LIXO}</button></div></td></tr>`).join('');
     return `<section class="card"><div class="row"><div><h2>${esc(k.nome)} · fatura de ${MESL[cur]}</h2><div class="note">Vence em ${venc} · fecha todo dia ${k.fecha}</div></div>
       <div class="row" style="gap:10px"><span style="font-family:var(--display);font-size:22px">${brl(f.total)}</span>${f.n?`<button class="paid ${f.pago?'yes':'no'}" data-act="fatpago" data-card="${esc(k.id)}">${f.pago?'Pago':'A pagar'}</button>`:''}</div></div>
       ${barraLimite(k)}
+      ${k.separa&&f.n?`<div class="reserva"><div class="limtop"><span class="note">${ICO_COFRE} Reserva para esta fatura</span><span><b>${brl(f.sep)}</b> <span class="note">de ${brl(f.total)}</span></span></div>
+        <div class="limbar"><div class="fill ok" style="width:${f.total?Math.min(100,f.sep/f.total*100):0}%"></div></div>
+        <div class="note">${f.total-f.sep>0.004?`Faltam ${brl(f.total-f.sep)} sem separar · essa parte é despesa de ${MESL[cur]}`:'Fatura toda coberta pelo dinheiro separado'}</div></div>`:''}
       ${fcAtivo&&lista0.length?`<div class="note">${lista.length?`Mostrando ${lista.length} de ${lista0.length} ${lista0.length===1?'compra':'compras'} desta fatura.`:'Nenhuma compra desta fatura com esses filtros.'}</div>`:''}
       ${lista.length?`<div class="tbl" id="lanc-cc-${esc(k.id)}"><table><thead><tr><th>Compra</th><th>Categoria</th><th class="num">Valor</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:lista0.length?'':`<div class="note">Nenhuma compra nesta fatura.</div>`}
       <div class="metaIn"><label for="banco-${esc(k.id)}">Valor que o banco cobrou</label><input id="banco-${esc(k.id)}" data-banco="${esc(k.id)}" inputmode="decimal" placeholder="opcional" value="${fmtIn(banco)}" ${hide()?'readonly':''}>
@@ -671,12 +760,13 @@ function viewCartoes(){
           <label for="cfValor">Valor total<input class="field" id="cfValor" inputmode="decimal" placeholder="0,00" required></label>
           <label for="cfParc">Parcelas<select class="field" id="cfParc">${Array.from({length:24},(_,i)=>`<option value="${i+1}">${i===0?'À vista':(i+1)+'x'}</option>`).join('')}</select></label>
           <label for="cfQuem">De outra pessoa?<input class="field" id="cfQuem" placeholder="Nome, se for"></label>
+          <label class="sepbox" id="cfSepBox" for="cfSep" style="grid-column:1/3" hidden><input type="checkbox" id="cfSep"><span><b>Já separei o dinheiro desta compra</b><span class="note">Marque se você já tirou esse valor da conta para pagar a fatura. A compra conta no mês em que foi feita e não pesa no mês da fatura.</span></span></label>
           <div class="note" id="cfPrev" style="grid-column:1/3"></div>
           <button class="btn" type="submit" style="grid-column:1/3">Adicionar compra</button>
         </form></section>`:''}
       ${CARTOES.length?`<section class="card"><h2>Próximas faturas</h2><div class="tbl"><table><thead><tr><th>Mês</th>${CARTOES.map(k=>`<th class="num">${esc(k.nome)}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${prox.map(p=>`<tr><td class="mo">${MES[p.t.m]}/${String(p.t.y).slice(2)}</td>${p.vals.map(v=>`<td class="num">${v?brl0(v):'–'}</td>`).join('')}<td class="num"><b>${p.total?brl0(p.total):'–'}</b></td></tr>`).join('')}</tbody></table></div><div class="note">Só parcelas já lançadas. Compras novas entram conforme você lança.</div></section>`:''}
       <section class="card"><h2>Seus cartões</h2>
-        ${CARTOES.map(k=>`<div class="cardbox"><div class="ccrow" style="border:0"><div><b>${esc(k.nome)}</b><div class="note">Fecha dia ${k.fecha} · vence dia ${k.vence}</div></div><label class="note" for="lim-${esc(k.id)}" style="text-align:right">Limite</label><input class="cell num field" id="lim-${esc(k.id)}" data-cardlim="${esc(k.id)}" inputmode="decimal" placeholder="0,00" value="${fmtIn(k.limite)}" style="width:110px" ${hide()?'readonly':''}><button class="del" data-delcard="${esc(k.id)}" title="Remover cartão" aria-label="Remover ${esc(k.nome)}">×</button></div>${k.limite?barraLimite(k):''}</div>`).join('')}
+        ${CARTOES.map(k=>`<div class="cardbox"><div class="ccrow" style="border:0"><div><b>${esc(k.nome)}</b><div class="note">Fecha dia ${k.fecha} · vence dia ${k.vence}</div></div><label class="note" for="lim-${esc(k.id)}" style="text-align:right">Limite</label><input class="cell num field" id="lim-${esc(k.id)}" data-cardlim="${esc(k.id)}" inputmode="decimal" placeholder="0,00" value="${fmtIn(k.limite)}" style="width:110px" ${hide()?'readonly':''}><button class="del" data-delcard="${esc(k.id)}" title="Remover cartão" aria-label="Remover ${esc(k.nome)}">×</button></div><label class="sepcfg"><input type="checkbox" data-cardsep="${esc(k.id)}" ${k.separa?'checked':''}> Separo o dinheiro na hora da compra</label>${k.limite?barraLimite(k):''}</div>`).join('')}
         <form id="cardForm" class="form" style="grid-template-columns:2fr 1fr 1fr">
           <label for="kNome">Nome<input class="field" id="kNome" placeholder="Ex.: Nubank" required></label>
           <label for="kFecha">Fecha dia<input class="field" id="kFecha" type="number" min="1" max="31" placeholder="3" required></label>
@@ -693,9 +783,10 @@ function previewCompra(){
   const el=document.getElementById('cfPrev'); if(!el) return;
   const card=CARTOES.find(c=>c.id===document.getElementById('cfCartao').value), data=document.getElementById('cfData').value;
   const v=parseBR(document.getElementById('cfValor').value), n=+document.getElementById('cfParc').value||1, quem=document.getElementById('cfQuem').value.trim();
+  const sb=document.getElementById('cfSepBox'); if(sb){const ok=!!(card&&card.separa&&n===1);sb.hidden=!ok;if(!ok)document.getElementById('cfSep').checked=false;}
   if(!card||!/^\d{4}-\d\d-\d\d$/.test(data)){el.textContent='';return;}
   const f=faturaDe(card,data);
-  el.textContent=`Entra na fatura de ${MESL[f.m]}/${f.y} (vence ${String(card.vence).padStart(2,'0')}/${pad(f.m)})`+(v&&n>1?` · ${n}x de ${brl(parcelas(v,n)[0])}, até ${MES[norm(f.y,f.m+n-1).m]}/${norm(f.y,f.m+n-1).y}`:'')+(quem?` · vira reembolso a receber de ${quem}`:'')+(card.limite&&v>card.limite-limiteUsado(card.id)?` · Atenção: passa do limite disponível (${brl(card.limite-limiteUsado(card.id))})`:'');
+  el.textContent=`Entra na fatura de ${MESL[f.m]}/${f.y} (vence ${String(card.vence).padStart(2,'0')}/${pad(f.m)})`+(v&&n>1?` · ${n}x de ${brl(parcelas(v,n)[0])}, até ${MES[norm(f.y,f.m+n-1).m]}/${norm(f.y,f.m+n-1).y}`:'')+(quem?` · vira reembolso a receber de ${quem}`:'')+(n===1&&document.getElementById('cfSep')&&document.getElementById('cfSep').checked?` · conta como despesa de ${MESL[+data.slice(5,7)-1]} (dinheiro já separado)`:'')+(card.limite&&v>card.limite-limiteUsado(card.id)?` · Atenção: passa do limite disponível (${brl(card.limite-limiteUsado(card.id))})`:'');
 }
 function viewMetas(){
   const C=S.config, meta=Number(C.meta)||0; let acc=0;
@@ -837,6 +928,9 @@ V.addEventListener('click',e=>{
   const fse=e.target.closest('[data-fset]'); if(fse){const o=fse.dataset.fset==='mes'?F:FC;o[fse.dataset.k]=fse.dataset.v;FP=null;FSTEP=null;render();return;}
   const fxx=e.target.closest('[data-fx]'); if(fxx){const o=fxx.dataset.fx==='mes'?F:FC;o[fxx.dataset.k]='';render();return;}
   const gb=e.target.closest('[data-graf]'); if(gb){lsSet('grafCat',gb.dataset.graf);render();return;}
+  const sv=e.target.closest('[data-sepver]'); if(sv){janelaSeparadas(sv.dataset.sepver);return;}
+  const sm=e.target.closest('[data-sepmes]'); if(sm){const [cid,fy,fm]=sm.dataset.sepmes.split('|');janelaSeparadas(cid,+fy,+fm,true);return;}
+  const gf=e.target.closest('[data-gofat]'); if(gf){const [fy,fm]=gf.dataset.gofat.split('-').map(Number);ano=fy;S=yr(fy);cur=fm;tab='cartoes';render();return;}
   const g=e.target.closest('[data-goto]'); if(g){tab=g.dataset.goto;render();return;}
   const cor=e.target.closest('[data-cor]'); if(cor){setSetting({cor:cor.dataset.cor});render();return;}
   const dc=e.target.closest('[data-delcat]'); if(dc){const s=settings(),tp=dc.dataset.tipo,c=dc.dataset.delcat;
@@ -864,7 +958,9 @@ V.addEventListener('click',e=>{
   if(act==='apagarNao'){document.getElementById('confApagar').classList.add('hidden');return;}
   if(act==='apagarSim'){DOCS={};saveDocs();lsSet('lastSync',0);hydrate();ano=HOJE_ANO;S=yr(ano);applyLook();render();showBanner('Os dados deste aparelho foram apagados.');return;}
   if(act==='fatpago'){const f=S.cc[cur].faturas,id=a.dataset.card;f[id]=Object.assign({},f[id],{pago:!(f[id]||{}).pago});touch(ccKey(ano,cur));render();return;}
+  if(act==='sepcc'){const tr=a.closest('tr[data-cc]');const x=tr&&S.cc[cur].compras.find(z=>z.id===tr.dataset.cc);if(x&&x.total===1){if(x.sep)delete x.sep;else x.sep=true;touch(ccKey(ano,cur));}render();return;}
   if(act==='tercrec'){const x=S.cc[cur].compras.find(z=>z.id===a.dataset.id);if(x){x.recebido=!x.recebido;touch(ccKey(ano,cur));}render();return;}
+  if(act==='editcc'){const tr=a.closest('tr[data-cc]');if(tr)janelaEditarCompra(tr.dataset.cc);return;}
   if(act==='delcc'){const tr=a.closest('tr[data-cc]');const x=tr&&S.cc[cur].compras.find(z=>z.id===tr.dataset.cc);if(!x)return;
     let tot=0,n=0;cadaCompra(z=>{if(z.grupo===x.grupo){tot+=Number(z.valor)||0;n++;}});
     const txt=x.total>1?`A compra <b>${esc(x.desc)}</b> e todas as suas <b>${n} parcelas</b> (${brl(tot)} no total) serão excluídas de todas as faturas.`:`A compra <b>${esc(x.desc)}</b> (${brl(x.valor)}${x.data?', '+fmtData(x.data):''}) será excluída da fatura.`;
@@ -887,6 +983,7 @@ V.addEventListener('click',e=>{
   }
   const tr=a.closest('tr[data-i]'); if(!tr) return;
   if(act==='pago'){const it=S.months[cur][+tr.dataset.i]; it.pago=!it.pago;}
+  if(act==='edit'){janelaEditar(+tr.dataset.i);return;}
   if(act==='del'){const it=S.months[cur][+tr.dataset.i]; if(!it) return; const m=cur, y=ano;
     confirmar({titulo:'Excluir este lançamento?',texto:`O lançamento <b>${esc(it.desc)}</b> (${brl(it.valor)}${it.data?', '+fmtData(it.data):''}) será excluído. Isso não pode ser desfeito.`,ok:'Excluir'})
       .then(sim=>{if(!sim)return;const arr=yr(y).months[m],i=arr.indexOf(it);if(i>=0){arr.splice(i,1);touch(monthKey(y,m));}render();});
@@ -903,6 +1000,7 @@ V.addEventListener('change',e=>{
   if(t.id==='stTema'){setSetting({tema:t.value});t.blur();render();return;}
   if(t.id==='stOcultar'){setSetting({ocultar:t.checked});render();return;}
   if(t.closest('#ccForm')){previewCompra();return;}
+  if(t.dataset.cardsep!=null){const k=CARTOES.find(z=>z.id===t.dataset.cardsep);if(k){k.separa=t.checked;touch('cartoes');}render();return;}
   if(t.closest('#cardForm')) return;
   if(t.dataset.cardlim!=null){const k=CARTOES.find(z=>z.id===t.dataset.cardlim);if(k){k.limite=t.value.trim()===''?null:parseBR(t.value);touch('cartoes');}t.blur();render();return;}
   if(t.dataset.banco!=null){const f=S.cc[cur].faturas,id=t.dataset.banco;f[id]=Object.assign({},f[id],{banco:t.value.trim()===''?null:parseBR(t.value)});touch(ccKey(ano,cur));t.blur();render();return;}
@@ -946,7 +1044,7 @@ V.addEventListener('submit',e=>{
     if(!(valor>0)){avisoCampo(document.getElementById('cfValor'),'Digite um valor maior que zero, só com números (ex.: 297,00).');return;}
     if(!data){avisoCampo(document.getElementById('cfData'),'Escolha a data da compra.');return;}
     const quem=document.getElementById('cfQuem').value.trim();
-    const f=addCompra({cartao:document.getElementById('cfCartao').value,data,desc,cat:document.getElementById('cfCat').value,valor,n:+document.getElementById('cfParc').value||1,terceiro:!!quem,quem});
+    const f=addCompra({cartao:document.getElementById('cfCartao').value,data,desc,cat:document.getElementById('cfCat').value,valor,n:+document.getElementById('cfParc').value||1,terceiro:!!quem,quem,sep:!!(document.getElementById('cfSep')||{}).checked});
     document.activeElement&&document.activeElement.blur(); render();
     setTimeout(()=>{const p=document.getElementById('cfPrev');if(p&&f)p.innerHTML=`<b>Lançada na fatura de ${MESL[f.m]}/${f.y}.</b>${f.y!==ano||f.m!==cur?` Para ver, escolha ${MES[f.m]}${f.y!==ano?' de '+f.y:''} na barra de meses.`:''}`;const d=document.getElementById('cfDesc');d&&d.focus();},0); return;
   }
