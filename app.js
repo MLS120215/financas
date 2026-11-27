@@ -672,9 +672,8 @@ function viewMes(){
 /* ---------- gráfico de rosca: despesas por categoria ---------- */
 function grafTipo(){return lsGet('grafCat','rosca')==='barras'?'barras':'rosca';}
 function rosca(cl){
-  const MAXF=7, tot=cl.reduce((a,[,v])=>a+v,0);
-  let fatias=cl.slice(0,MAXF).map(([k,v],i)=>({k,v,c:`var(--s${i+1})`}));
-  if(cl.length>MAXF){const resto=cl.slice(MAXF);fatias.push({k:resto.length===1?resto[0][0]:`Outras (${resto.length})`,v:resto.reduce((a,[,v])=>a+v,0),c:'var(--s-outras)',lista:resto.map(r=>r[0]).join(', ')});}
+  const NCOR=14, tot=cl.reduce((a,[,v])=>a+v,0);   // cada categoria tem a sua fatia (as cores repetem só depois da 14ª)
+  const fatias=cl.map(([k,v],i)=>({k,v,c:`var(--s${i%NCOR+1})`}));
   const R=92,r=60,C=100, pt=(rad,a)=>[C+rad*Math.sin(a),C-rad*Math.cos(a)];
   let a0=0;
   const paths=fatias.map((f,i)=>{
@@ -684,7 +683,7 @@ function rosca(cl){
       d=`M${x0.toFixed(2)} ${y0.toFixed(2)}A${R} ${R} 0 ${big} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}L${x2.toFixed(2)} ${y2.toFixed(2)}A${r} ${r} 0 ${big} 0 ${x3.toFixed(2)} ${y3.toFixed(2)}Z`;}
     a0=a1;
     return `<path d="${d}" fill="${f.c}" data-fatia="${i}" fill-rule="evenodd"><title>${esc(f.k)}: ${brl(f.v)} (${pct(fr)})</title></path>`;}).join('');
-  const leg=fatias.map((f,i)=>`<li data-fatia="${i}"${f.lista?` title="${esc(f.lista)}"`:''}><span class="sq" style="background:${f.c}"></span><span class="nm">${esc(f.k)}</span><span class="vl">${brl(f.v)}</span><span class="pc">${pct(tot?f.v/tot:0)}</span></li>`).join('');
+  const leg=fatias.map((f,i)=>`<li data-fatia="${i}"${f.lista?' data-grupo="1" class="rl-grupo" title="Toque para ver quais são"':''}><span class="sq" style="background:${f.c}"></span><span class="nm">${esc(f.k)}${f.lista?' <span class="rl-seta" aria-hidden="true">▾</span>':''}</span><span class="vl">${brl(f.v)}</span><span class="pc">${pct(tot?f.v/tot:0)}</span></li>${f.lista?`<li class="rosca-sub"><ul>${f.lista.map(([k,v])=>`<li><span class="nm">${esc(k)}</span><span class="vl">${brl(v)}</span><span class="pc">${pct(tot?v/tot:0)}</span></li>`).join('')}</ul></li>`:''}`).join('');
   return `<div class="rosca" data-tot="${esc(brl(tot))}">
     <div class="rosca-g"><svg viewBox="0 0 200 200" role="img" aria-label="Gráfico de rosca das despesas por categoria">${paths}</svg>
       <div class="rosca-c"><span class="rc-l">Despesas do mês</span><b class="rc-v">${brl(tot)}</b></div></div>
@@ -989,12 +988,12 @@ function roscaFoco(el){
   box.classList.toggle('foco',i!=null);
   box.querySelectorAll('[data-fatia]').forEach(x=>x.classList.toggle('on',x.dataset.fatia===i));
   const l=box.querySelector('.rc-l'), v=box.querySelector('.rc-v');
-  if(i!=null&&li){l.textContent=li.querySelector('.nm').textContent+' · '+li.querySelector('.pc').textContent;v.textContent=li.querySelector('.vl').textContent;}
+  if(i!=null&&li){l.textContent=li.querySelector('.nm').textContent.replace('▾','').trim()+' · '+li.querySelector('.pc').textContent;v.textContent=li.querySelector('.vl').textContent;}
 }
 function roscaLimpa(box){if(!box)return;box.classList.remove('foco');box.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));box.querySelector('.rc-l').textContent='Despesas do mês';box.querySelector('.rc-v').textContent=box.dataset.tot;}
 document.addEventListener('pointerover',e=>{const f=e.target.closest&&e.target.closest('.rosca [data-fatia]');if(f)roscaFoco(f);});
 document.addEventListener('pointerout',e=>{if(e.pointerType!=='mouse')return;const box=e.target.closest&&e.target.closest('.rosca');if(box&&!box.contains(e.relatedTarget))roscaLimpa(box);});
-document.addEventListener('click',e=>{const f=e.target.closest&&e.target.closest('.rosca [data-fatia]');if(f){roscaFoco(f);return;}document.querySelectorAll('.rosca.foco').forEach(roscaLimpa);}); // no celular: toca para destacar, toca fora para voltar
+document.addEventListener('click',e=>{const f=e.target.closest&&e.target.closest('.rosca [data-fatia]');if(f){roscaFoco(f);if(f.dataset.fatia!=null){const box=f.closest('.rosca'),g=box.querySelector('li[data-grupo]');if(g&&g.dataset.fatia===f.dataset.fatia)box.classList.toggle('aberto');}return;}document.querySelectorAll('.rosca.foco').forEach(roscaLimpa);}); // no celular: toca para destacar, toca fora para voltar
 V.addEventListener('click',e=>{
   const fpb=e.target.closest('[data-fp]'); if(fpb){FP=FP===fpb.dataset.fp?null:fpb.dataset.fp;FSTEP=null;render();return;}
   const fst=e.target.closest('[data-fstep]'); if(fst){FSTEP=fst.dataset.fstep||null;render();const r=document.querySelector('.fmenu .fmrow, .fmenu .fmback');r&&r.focus();return;}
