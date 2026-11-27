@@ -421,24 +421,34 @@ function janelaEditar(i){
     <div class="sj-top"><div><h2 id="edT">Editar lançamento</h2><div class="note">${MESL[m]} de ${y}</div></div><button type="button" class="sj-x" data-r="0" aria-label="Fechar">×</button></div>
     <div class="ed-grid">
       <label class="ed-full">Descrição<input class="field" id="eDesc" value="${esc(it.desc)}" required></label>
-      <label>Data<input class="field" type="date" id="eData" value="${dd}" min="${l.min}" max="${l.max}"></label>
+      <label>Data<input class="field" type="date" id="eData" value="${dd}"></label>
       <label>Valor (R$)<input class="field" id="eVal" inputmode="decimal" autocomplete="off" value="${hide()?'':fmtMoeda(it.valor)}" placeholder="0,00" required></label>
       <label>Tipo<select class="field" id="eTipo">${tipoOpts(it.tipo)}</select></label>
       <label>Categoria<select class="field" id="eCat">${catOpts(it.tipo,it.cat)}</select></label>
+      <div class="ed-full note sepnote" id="eMove" hidden></div>
       <label class="ed-full ed-chk"><input type="checkbox" id="ePago" ${it.pago?'checked':''}> <span id="ePagoT">${ENTRADA.has(it.tipo)?'Já recebido':'Já pago'}</span></label>
     </div>
     <div class="modal-bt"><button type="button" class="btn ghost" data-r="0">Cancelar</button><button type="submit" class="btn">Salvar</button></div></form>`;
   const fim=()=>{document.removeEventListener('keydown',tecla,true);w.remove();ant&&ant.focus&&ant.isConnected&&ant.focus();};
   const tecla=e=>{if(e.key==='Escape'){e.preventDefault();fim();}};
   const q=id=>w.querySelector('#'+id);
+  const avisoMove=()=>{const dt=q('eData').value,el=q('eMove');if(/^\d{4}-\d\d-\d\d$/.test(dt)&&dt.slice(0,7)!==`${y}-${pad(m)}`){const ny=+dt.slice(0,4),nm=+dt.slice(5,7)-1;el.textContent=`Ao salvar, este lançamento passa para ${MESL[nm]} de ${ny}.`;el.hidden=false;}else el.hidden=true;};
+  q('eData').addEventListener('input',avisoMove); q('eData').addEventListener('change',avisoMove);
   q('eTipo').addEventListener('change',()=>{const t=q('eTipo').value,c=q('eCat').value;q('eCat').innerHTML=catOpts(t,cats(t).includes(c)?c:(cats(t)[0]||'Outros'));q('ePagoT').textContent=ENTRADA.has(t)?'Já recebido':'Já pago';});
   w.addEventListener('click',e=>{if(e.target.closest('[data-r]')||e.target===w)fim();});
   w.querySelector('form').addEventListener('submit',e=>{e.preventDefault();
     const d=q('eDesc').value.trim(), v=hide()&&!q('eVal').value?it.valor:parseBR(q('eVal').value), dt=q('eData').value;
     if(!d){avisoCampo(q('eDesc'),'Escreva uma descrição (ex.: Mercado).');return;}
     if(!(v>0)){avisoCampo(q('eVal'),'Digite um valor maior que zero, só com números (ex.: 18,50).');return;}
-    if(dt&&dt.slice(0,7)!==`${y}-${pad(m)}`){avisoCampo(q('eData'),`Escolha um dia de ${MESL[m]}.`);return;}
+    if(dt&&!/^\d{4}-\d\d-\d\d$/.test(dt)){avisoCampo(q('eData'),'Escolha uma data válida no calendário.');return;}
     it.desc=d; it.valor=v; it.tipo=q('eTipo').value; it.cat=q('eCat').value; it.pago=q('ePago').checked; if(dt) it.data=dt; else delete it.data;
+    if(dt&&dt.slice(0,7)!==`${y}-${pad(m)}`){   // mudou de mês: o lançamento vai para a lista do outro mês
+      const ny=+dt.slice(0,4), nm=+dt.slice(5,7)-1, arr=yr(y).months[m], idx=arr.indexOf(it);
+      if(idx>=0) arr.splice(idx,1);
+      yr(ny).months[nm].push(it); yr(ny).keep=true;
+      touch(monthKey(y,m)); touch(monthKey(ny,nm)); fim(); render();
+      showBanner(`"${d}" foi para ${MESL[nm]} de ${ny}. Para ver, escolha ${MES[nm]}${ny!==ano?' de '+ny:''} na barra de meses.`);
+      return;}
     touch(monthKey(y,m)); fim(); render();});
   document.addEventListener('keydown',tecla,true);
   document.body.appendChild(w); q('eDesc').focus();
