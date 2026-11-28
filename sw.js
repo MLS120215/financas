@@ -1,6 +1,6 @@
 /* Service worker: deixa o app abrir sem internet.
    Ao publicar uma versão nova, aumente o número de VERSAO. */
-const VERSAO = 'financas-v14';
+const VERSAO = 'financas-v15';
 const APP = ['./', './index.html', './app.js', './manifest.webmanifest',
   './icons/icon-32.png', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png'];
 const EXTERNOS = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
